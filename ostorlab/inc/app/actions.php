@@ -563,3 +563,41 @@ function ost_job_reopen( $id, $keys ) {
 	$job['status'] = 'running';
 	update_post_meta( $id, '_ost_job', $job );
 }
+
+// Estimate tab: long-tail factor, forecast scale / manual clicks, conversion, order value.
+add_action( 'admin_post_ost_estimate', function () {
+	ost_guard( 'ost_estimate' );
+	$id = (int) ost_post( 'id' );
+	$p  = ost_proposal( $id );
+	if ( ! $p ) {
+		ost_back( ost_url(), 'پروپوزال پیدا نشد.', false );
+	}
+	$num = function ( $k, $min, $max, $def ) {
+		$v = (float) ost_to_number( ost_post( $k, '' ) );
+		return '' === trim( (string) ost_post( $k, '' ) ) ? $def : max( $min, min( $max, $v ) );
+	};
+	if ( ost_post( 'reset' ) ) {
+		delete_post_meta( $id, '_ost_estimate' );
+	} else {
+		$low  = (int) $num( 'low', 0, 1e7, 0 );
+		$high = (int) $num( 'high', 0, 1e7, 0 );
+		update_post_meta( $id, '_ost_estimate', array(
+			'longtail'   => $num( 'longtail', 1, 5, 1.8 ),
+			'adjust'     => (int) $num( 'adjust', 20, 500, 100 ),
+			'headline'   => 'list' === ost_post( 'headline' ) ? 'list' : 'all',
+			'close_rate' => $num( 'close_rate', 1, 100, 30 ),
+			'lead_rate'  => $num( 'lead_rate', 0, 50, 0 ),
+			'low'        => $low && $high >= $low ? $low : 0,
+			'high'       => $low && $high >= $low ? $high : 0,
+		) );
+		$in = get_post_meta( $id, '_ost_inputs', true );
+		if ( is_array( $in ) ) {
+			$in['conversion_rate'] = $num( 'conversion_rate', 0.1, 30, (float) ( $in['conversion_rate'] ?? 1.5 ) );
+			$in['aov']             = (int) $num( 'aov', 0, 1e12, (int) ( $in['aov'] ?? 0 ) );
+			update_post_meta( $id, '_ost_inputs', $in );
+		}
+	}
+	ost_compute( $id );
+	ost_log( $id, 'تنظیمات تخمین ترافیک و فروش به‌روز شد' );
+	ost_back( ost_proposal_url( $id, 'estimate' ), 'تخمین‌ها دوباره محاسبه شد؛ همه اسلایدها از همین عددها استفاده می‌کنند.' );
+} );

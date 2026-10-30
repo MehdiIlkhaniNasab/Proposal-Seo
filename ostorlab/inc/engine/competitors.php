@@ -133,10 +133,11 @@ function ost_revenue_range( $buyer_clicks, $in ) {
 	$cr  = max( 0.1, (float) ( $in['conversion_rate'] ?? 1.5 ) ) / 100;
 	$aov = (float) ( $in['aov'] ?? 0 );
 	if ( in_array( $in['business_type'] ?? 'shop', array( 'service', 'local', 'saas' ), true ) ) {
-		$leads = $buyer_clicks * max( 0.5, (float) ost_setting( 'lead_rate', 3 ) ) / 100;
+		$leads = $buyer_clicks * max( 0.5, (float) ( ! empty( $in['lead_rate'] ) ? $in['lead_rate'] : ost_setting( 'lead_rate', 3 ) ) ) / 100;
+		$close = ( ! empty( $in['close_rate'] ) ? (float) $in['close_rate'] : 30 ) / 100; // Leads that become customers.
 		return array(
-			'low'    => $aov > 0 ? $leads * 0.7 * $aov * 0.3 : 0,
-			'high'   => $aov > 0 ? $leads * 1.3 * $aov * 0.3 : 0,
+			'low'    => $aov > 0 ? $leads * 0.7 * $aov * $close : 0,
+			'high'   => $aov > 0 ? $leads * 1.3 * $aov * $close : 0,
 			'orders' => (int) round( $leads ),
 			'basis'  => 'leads',
 			'value'  => $buyer_clicks * (float) ost_setting( 'click_value', 3000 ),

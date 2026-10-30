@@ -141,6 +141,8 @@ $here   = ost_proposal_url( $id, $tab );
 
 <?php elseif ( 'discovery' === $tab ) : ost_view( 'app/views/tab-discovery', array( 'p' => $p ) ); ?>
 
+<?php elseif ( 'estimate' === $tab ) : if ( ! $need() ) { ost_view( 'app/views/tab-estimate', array( 'p' => $p, 'a' => $a ) ); } ?>
+
 <?php elseif ( 'keywords' === $tab ) : ost_view( 'app/views/tab-keywords', array( 'p' => $p, 'a' => $a ) ); ?>
 
 <?php elseif ( 'market' === $tab ) : if ( ! $need() ) : $m = $a['market']; ?>

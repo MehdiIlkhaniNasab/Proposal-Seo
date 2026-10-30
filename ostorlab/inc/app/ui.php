@@ -19,6 +19,7 @@ function ost_proposal_tabs() {
 		'market'      => array( 'بازار و کلمات', 'search' ),
 		'competitors' => array( 'رقبا', 'users' ),
 		'strategy'    => array( 'استراتژی شروع', 'target' ),
+		'estimate'    => array( 'تخمین ترافیک و فروش', 'trophy' ),
 		'offpage'     => array( 'آف‌پیج', 'link' ),
 		'technical'   => array( 'تکنیکال', 'tool' ),
 		'costs'       => array( 'هزینه و نقشه راه', 'wallet' ),

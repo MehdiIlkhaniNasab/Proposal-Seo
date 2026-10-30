@@ -318,6 +318,9 @@ function ost_job_step( $p, $key ) {
 function ost_compute( $id ) {
 	$p       = ost_proposal( $id );
 	$in      = $p['inputs'];
+	$est     = ost_estimate_settings( $id ); // The manager's estimate settings (close / lead rate apply to competitors too).
+	$in['close_rate'] = (float) $est['close_rate'];
+	$in['lead_rate']  = (float) $est['lead_rate'];
 	$domains = ost_domains( $p );
 	$cd      = $in['has_site'] ? $in['domain'] : '';
 	$kw      = ost_data( $id, 'keywords' );
@@ -378,10 +381,19 @@ function ost_compute( $id ) {
 	$suggest     = ost_budget_suggest( $a, $months );
 	$a['budget'] = ost_budget( $suggest, $months, (array) $p['budget'] );
 	$sel         = $a['budget']['packages'][ $a['budget']['selected'] ] ?? reset( $a['budget']['packages'] );
-	$a['forecast'] = ost_forecast( $a, $months, (float) $sel['effort'] );
+	// Forecast from the reviewed keywords, scaled / set by the manager (estimate tab); the
+	// headline numbers include the undiscovered keywords when chosen so.
+	$auto  = ost_forecast( $a, $months, (float) $sel['effort'] );
+	$list  = ost_forecast_scale( $auto, $est['adjust'] / 100, (int) $est['low'], (int) $est['high'] );
+	$ratio = ( $list['scenarios']['mid'] - $list['baseline'] ) / max( 1, $auto['scenarios']['mid'] - $auto['baseline'] );
+	$a['estimate'] = ost_estimate( $a, $list, $in, $est );
+	$a['estimate']['auto'] = $auto['scenarios']; // Before the manager's adjustment, for reference.
+	$lt            = 'all' === $a['estimate']['headline'] ? $a['estimate']['longtail'] : 1;
+	$a['forecast'] = ost_forecast_scale( $list, $lt );
+	$a['forecast']['scope'] = $a['estimate']['headline'];
 	$a['forecasts'] = array();
 	foreach ( $a['budget']['packages'] as $k => $pk ) {
-		$f                    = ost_forecast( $a, $months, (float) $pk['effort'] );
+		$f                    = $k === $a['budget']['selected'] ? $a['forecast'] : ost_forecast_scale( ost_forecast( $a, $months, (float) $pk['effort'] ), $ratio * $lt );
 		$a['forecasts'][ $k ] = array( 'low' => $f['scenarios']['low'], 'mid' => $f['scenarios']['mid'], 'high' => $f['scenarios']['high'] );
 	}
 	$a['roadmap'] = ost_roadmap( $a, $sel, $a['forecast'], $months, $in );

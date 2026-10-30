@@ -128,7 +128,8 @@ $css = (string) file_get_contents( $assets['css'] ); // phpcs:ignore WordPress.W
 		</div>
 		<div class="tiles t2">
 			<?php
-			$tile( ost_compact( $m['total'] ), 'جستجوی ماهانه بازار شما', ost_num( count( $m['clusters'] ) ) . ' خوشه، ' . ost_num( $m['keywords'] ) . ' کلمه' );
+			$ee = (array) ( $a['estimate'] ?? array() );
+			$tile( ost_compact( $m['total'] ), 'جستجوی ماهانه کلمات بررسی‌شده', ost_num( $m['keywords'] ) . ' کلمه در ' . ost_num( count( $m['clusters'] ) ) . ' خوشه' . ( ( $ee['longtail'] ?? 1 ) > 1 ? '؛ کل حوزه حدود ' . ost_compact( $ee['total'] ) : '' ) );
 			$tile( ost_compact( $m['buyer'] ), 'جستجوی آماده خرید', ost_pct( $m['buyer'] / max( 1, $m['total'] ) ) . ' از کل تقاضا', 'hl' );
 			$tile( ost_num( $f['scenarios']['low'] ) . ' تا ' . ost_num( $f['scenarios']['high'] ), 'کلیک غیربرندی ماهانه در پایان دوره', $f['baseline'] ? 'امروز حدود ' . ost_num( $f['baseline'] ) : 'شروع از صفر' );
 			$tile( ost_num( $months ) . ' ماه', 'دوره پیشنهادی', 'پکیج ' . $pkg['label'] . '، ماهانه حدود ' . ost_toman( $pkg['monthly'], true ) );
@@ -207,6 +208,34 @@ if ( $on( 'profile' ) ) :
 				}
 				?>
 			</div>
+		</div>
+	</div>
+<?php $close(); endif; ?>
+
+<?php
+if ( $on( 'demand' ) ) :
+	$ee    = $a['estimate'];
+	$extra = max( 0, $ee['total'] - $ee['measured'] );
+	$pct   = $ee['total'] ? 100 * $ee['measured'] / $ee['total'] : 100;
+	$close = $open( $section['market'] . ' · کل تقاضای حوزه', 'کل تقاضای جستجوی حوزه شما', 'از کلماتی که اندازه گرفتیم تا تقاضای واقعی بازار؛ هر عدد با منبعش.' );
+	?>
+	<div class="grid g-dem">
+		<div class="card dem-main">
+			<h3>جستجوی ماهانه در گوگل</h3>
+			<div class="dem-bar"><i class="ms" style="width:<?php echo esc_attr( round( $pct, 1 ) ); ?>%"><?php echo esc_html( ost_compact( $ee['measured'] ) ); ?></i><?php if ( $extra ) : ?><i class="lt"><?php echo esc_html( ost_compact( $extra ) . ' برآورد' ); ?></i><?php endif; ?></div>
+			<div class="dem-rows">
+				<div class="r ms"><span class="sw"></span><div><b><?php echo esc_html( ost_num( $ee['measured'] ) ); ?></b><small>جستجوی ماهانه <?php echo esc_html( ost_num( $ee['keywords'] ) ); ?> کلمه بررسی‌شده · اندازه‌گیری‌شده با سئو سیگنال</small></div></div>
+				<?php if ( $extra ) : ?>
+					<div class="r lt"><span class="sw"></span><div><b><?php echo esc_html( '+ ' . ost_num( $extra ) ); ?></b><small>برآورد جستجوی کلمات کشف‌نشده (دم بلند، جدید، فصلی) · ضریب <?php echo esc_html( ost_num( $ee['longtail'], 1 ) ); ?></small></div></div>
+					<div class="r tot"><span class="sw"></span><div><b><?php echo esc_html( '≈ ' . ost_num( $ee['total'] ) ); ?></b><small>کل تقاضای ماهانه حوزه شما (برآورد)</small></div></div>
+				<?php endif; ?>
+			</div>
+			<div class="dem-buy"><span>جستجوی آماده خرید</span><b><?php echo esc_html( ost_compact( $ee['buyer'] ) ); ?></b><small>از کلمات بررسی‌شده<?php echo $extra ? ' · با کلمات کشف‌نشده حدود ' . esc_html( ost_compact( $ee['buyer_all'] ) ) : ''; ?></small></div>
+		</div>
+		<div class="card dem-note">
+			<span class="dem-tag">شفافیت داده‌ها</span>
+			<div class="prose"><?php $para( $t['scope_note'] ?? '' ); ?></div>
+			<p class="dem-next">بعد از شروع: هر ماه کلمات تازه‌ای که در سرچ کنسول پیدا می‌شود به نقشه کلمات اضافه و برایشان صفحه و محتوا برنامه‌ریزی می‌شود.</p>
 		</div>
 	</div>
 <?php $close(); endif; ?>
@@ -764,7 +793,7 @@ if ( $on( 'astrolabe' ) ) :
 		</div>
 		<div class="tiles t1">
 			<?php
-			$tile( ost_num( $f['scenarios']['low'] ) . ' تا ' . ost_num( $f['scenarios']['high'] ), 'کلیک ماهانه در پایان دوره', 'سناریوی محتاطانه تا خوش‌بینانه', 'hl' );
+			$tile( ost_num( $f['scenarios']['low'] ) . ' تا ' . ost_num( $f['scenarios']['high'] ), 'کلیک ماهانه در پایان دوره', 'all' === ( $f['scope'] ?? 'list' ) ? 'شامل برآورد کلمات کشف‌نشده' : 'فقط از کلمات بررسی‌شده', 'hl' );
 			$tile( ost_num( $f['keywords']['low'] ) . ' تا ' . ost_num( $f['keywords']['high'] ), 'کلمه پول‌ساز در صفحه اول', 'از ' . ost_num( $f['keywords']['of'] ) . ' کلمه هدف' );
 			$rv = $f['revenue'];
 			$tile( $rv['high'] > 0 ? $range( $rv ) . ' تومان' : ost_num( $rv['orders'] ) . ( 'leads' === $rv['basis'] ? ' سرنخ' : ' سفارش' ), $rv['high'] > 0 ? 'فروش ماهانه از گوگل (تخمین)' : ( 'leads' === $rv['basis'] ? 'سرنخ ماهانه از گوگل' : 'سفارش ماهانه از گوگل' ), 'ارزش تبلیغاتی معادل: ' . ost_toman( $rv['value'], true ) . ' در ماه' );
@@ -772,6 +801,55 @@ if ( $on( 'astrolabe' ) ) :
 		</div>
 	</div>
 	<p class="note">این عددها پیش‌بینی‌اند، نه تعهد. تعهد ما انجام دقیق کارهای برنامه است؛ نتیجه به رقابت بازار، کیفیت سایت و سرعت همکاری هم بستگی دارد.</p>
+<?php $close(); endif; ?>
+
+<?php
+if ( $on( 'estimate' ) ) :
+	$ee   = $a['estimate'];
+	$hd   = 'all' === $ee['headline'];
+	$unit = 'leads' === $ee['basis'] ? 'سرنخ' : 'سفارش';
+	$rr   = function ( $lo, $hi, $fmt = 'ost_num' ) {
+		return $fmt( $lo ) . ' تا ' . $fmt( $hi );
+	};
+	$tm   = function ( $v ) {
+		return ost_compact( $v );
+	};
+	$erows = array(
+		array( 'کلیک ماهانه از گوگل در پایان دوره', $rr( $ee['list']['low']['clicks'], $ee['list']['high']['clicks'] ), $rr( $ee['all']['low']['clicks'], $ee['all']['high']['clicks'] ) ),
+		array( 'کلیک با نیت خرید', $rr( $ee['list']['low']['buyer'], $ee['list']['high']['buyer'] ), $rr( $ee['all']['low']['buyer'], $ee['all']['high']['buyer'] ) ),
+		array( $unit . ' ماهانه از گوگل', $rr( $ee['list']['low']['orders'], $ee['list']['high']['orders'] ), $rr( $ee['all']['low']['orders'], $ee['all']['high']['orders'] ) ),
+	);
+	if ( $ee['has_money'] ) {
+		$erows[] = array( 'فروش ماهانه از گوگل در پایان دوره (تومان)', $rr( $ee['list']['low']['revenue'], $ee['list']['high']['revenue'], $tm ), $rr( $ee['all']['low']['revenue'], $ee['all']['high']['revenue'], $tm ) );
+		$erows[] = array( 'فروش اضافه در کل ' . ost_num( $months ) . ' ماه (تومان)', $rr( $ee['list']['low']['period'], $ee['list']['high']['period'], $tm ), $rr( $ee['all']['low']['period'], $ee['all']['high']['period'], $tm ) );
+	}
+	$assume = array_filter( array(
+		'سهم قابل‌دستیابی از بازار بر اساس سهمی که رقبا همین امروز دارند و رشد مرحله‌ای (منحنی S)',
+		'نرخ کلیک هر رتبه: میانگین استاندارد نتایج گوگل',
+		'leads' === $ee['basis']
+			? sprintf( 'تبدیل کلیک خرید به سرنخ: %s٪ · سرنخ به مشتری: %s٪', ost_num( $ee['rate'] * 100, 1 ), ost_num( $ee['close_rate'] ) )
+			: sprintf( 'نرخ تبدیل کلیک خرید به سفارش: %s٪', ost_num( $ee['rate'] * 100, 1 ) ),
+		$in['aov'] ? ( 'leads' === $ee['basis'] ? 'ارزش هر مشتری: ' : 'میانگین ارزش سفارش: ' ) . ost_toman( $in['aov'], true ) : '',
+		$ee['manual'] ? 'پیش‌بینی کلیک با شناخت کارشناس ما از بازار شما تنظیم شده است' : ( 100 !== $ee['adjust'] ? 'پیش‌بینی خودکار با شناخت کارشناس ما ' . ( $ee['adjust'] > 100 ? 'افزایش' : 'کاهش' ) . ' داده شده است' : '' ),
+	) );
+	$close = $open( $section['plan'] . ' · تخمین فروش', 'ترافیک و فروش قابل‌انتظار، با فرض‌های شفاف', 'دو عدد کنار هم: یکی فقط از کلمات بررسی‌شده و یکی با کلمات کشف‌نشده‌ای که بعد از شروع پیدا می‌شوند.' );
+	?>
+	<div class="grid g-est">
+		<table class="tbl est">
+			<thead><tr><th></th><th class="<?php echo $hd ? '' : 'on'; ?>">فقط <?php echo esc_html( ost_num( $ee['keywords'] ) ); ?> کلمه بررسی‌شده</th><th class="<?php echo $hd ? 'on' : ''; ?>">با کلمات کشف‌نشده (برآورد)</th></tr></thead>
+			<tbody>
+				<tr class="est-main"><td></td><td class="<?php echo $hd ? '' : 'on'; ?>"><?php echo $hd ? '' : '<span>★ عدد اصلی پروپوزال</span>'; ?></td><td class="<?php echo $hd ? 'on' : ''; ?>"><?php echo $hd ? '<span>★ عدد اصلی پروپوزال</span>' : ''; ?></td></tr>
+				<?php foreach ( $erows as $r ) : ?>
+					<tr><td><b><?php echo esc_html( $r[0] ); ?></b></td><td class="n <?php echo $hd ? '' : 'on'; ?>"><?php echo esc_html( $r[1] ); ?></td><td class="n <?php echo $hd ? 'on' : ''; ?>"><?php echo esc_html( $r[2] ); ?></td></tr>
+				<?php endforeach; ?>
+			</tbody>
+		</table>
+		<div class="card est-assume">
+			<h3>این عددها چطور محاسبه شده؟</h3>
+			<ul><?php foreach ( $assume as $x ) { echo '<li>' . esc_html( $x ) . '</li>'; } ?></ul>
+		</div>
+	</div>
+	<p class="note">پیش‌بینی است، نه تعهد؛ فروش واقعی به قیمت، موجودی، تجربه خرید سایت و سرعت همکاری هم بستگی دارد. عدد ستون پررنگ در بقیه پروپوزال استفاده شده است.</p>
 <?php $close(); endif; ?>
 
 <?php if ( $on( 'packages' ) ) : $close = $open( $section['plan'] . ' · سرمایه‌گذاری', 'سه مسیر برای همکاری', 'همه پکیج‌ها شامل استراتژی، رفع فنی، مدیریت پروژه و گزارش ماهانه است؛ تفاوت در سرعت رشد است.' ); ?>

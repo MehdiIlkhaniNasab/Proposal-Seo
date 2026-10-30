@@ -395,3 +395,10 @@ body.ost-auth { min-height: 100vh; display: grid; place-items: center; backgroun
 .ost-scroll { max-height: 560px; overflow: auto; }
 .ost-kwrev tr.is-key td { background: #F0F7FF; }
 .ost-check { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; }
+.ost-est td.on, .ost-est th.on { background: #E6F4FD; font-weight: 800; }
+.ost-est-form .ost-field select, .ost-est-form .ost-field input.qty { max-width: 360px; }
+.ost-est-form .ost-check { display: flex; flex-direction: row; align-items: center; justify-content: flex-start; gap: 8px; font-weight: 600; }
+.ost-est-form .ost-check input { width: auto; margin: 0; }
+.ost-est-form .ost-row { flex-wrap: nowrap; align-items: center; }
+.ost-est-form .ost-row input.qty { width: 140px; flex: none; }
+.ost-est-form .ost-money { max-width: 360px; }

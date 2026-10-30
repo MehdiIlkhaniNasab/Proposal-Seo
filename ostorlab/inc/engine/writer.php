@@ -19,6 +19,7 @@ function ost_text_fields() {
 		'executive_summary' => array( 'خلاصه اجرایی (۲ پاراگراف کوتاه)', 6 ),
 		'strategy'          => array( 'استراتژی شروع (چرا از این نقطه شروع می‌کنیم؛ ۳ تا ۴ جمله)', 4 ),
 		'market'            => array( 'بازار جستجو', 3 ),
+		'scope_note'        => array( 'شفافیت داده‌ها: این عددها از کدام کلمات آمده (اسلاید تقاضای کل حوزه)', 6 ),
 		'current_state'     => array( 'وضعیت فعلی سایت', 3 ),
 		'competitors'       => array( 'رقبا', 3 ),
 		'offpage'           => array( 'اعتبار و لینک‌ها', 3 ),
@@ -76,6 +77,7 @@ function ost_writer_facts( $p, $a ) {
 		'has_site'     => (bool) $cd,
 		'search_console' => ! empty( $a['gsc']['totals'] ) ? array( 'clicks_3m' => $a['gsc']['totals']['clicks'], 'impressions_3m' => $a['gsc']['totals']['impressions'], 'brand_clicks' => $a['gsc']['brand']['brand'] ?? 0, 'nonbrand_clicks' => $a['gsc']['brand']['nonbrand'] ?? 0 ) : null,
 		'market'       => array( 'monthly_searches' => $a['market']['total'] ?? 0, 'buyer_searches' => $a['market']['buyer'] ?? 0, 'clusters' => $clusters ),
+		'demand_scope' => array( 'reviewed_keywords' => $a['estimate']['keywords'] ?? 0, 'measured_monthly_searches' => $a['estimate']['measured'] ?? 0, 'estimated_total_with_undiscovered_keywords' => $a['estimate']['total'] ?? 0, 'longtail_factor' => $a['estimate']['longtail'] ?? 1, 'forecast_includes_undiscovered' => 'all' === ( $a['estimate']['headline'] ?? 'list' ) ),
 		'client_profile' => $cd ? $profile( $cd ) : null,
 		'competitors'  => array_map( $profile, array_keys( array_filter( (array) ( $a['profiles'] ?? array() ), function ( $x ) {
 			return 'competitor' === ( $x['role'] ?? '' );
@@ -180,7 +182,8 @@ function ost_writer_ai( $p, $a, $part = 'all' ) {
 			'- هر متن بخش ۲ تا ۴ جمله؛ خلاصه اجرایی دو پاراگراف کوتاه: (۱) وضعیت فعلی و چالش اصلی، (۲) راهکار، زمان و نتیجه واقع‌بینانه؛ یک جمله هم به استراتژی شروع اشاره کند.',
 			'- تیتر جلد یک جمله الهام‌بخش و دقیق درباره فرصت رشد همین کسب‌وکار (حداکثر ۱۲ کلمه).',
 			'- «strategy» قلب پروپوزال است: استراتژی شروع (entry_strategy) و پیشنهاد اصلی (main_recommendation) را طوری توضیح بده که کارفرما حس کند نقطه ورود هوشمندانه و مخصوص کسب‌وکار خودش پیدا شده؛ با نام ۲ تا ۳ فرصت اول، چرایی، زمان نتیجه و کلیک قابل انتظار ۹۰ روز اول.',
-			'- «market» از کانال‌های تقاضا (channels) هم یک جمله بگوید.',
+			'- «market» از کانال‌های تقاضا (channels) هم یک جمله بگوید و شفاف بگوید عددها از reviewed_keywords کلمه بررسی‌شده آمده و با کلمات کشف‌نشده (demand_scope) تقاضای واقعی بیشتر است.',
+			'- اگر forecast_includes_undiscovered درست است، پیش‌بینی کلیک شامل برآورد کلمات کشف‌نشده است؛ این را یک بار ساده بگو.',
 			'- اگر سایت ندارد، از «شروع درست از صفر» بگو؛ برآوردهای رقبا تخمینی‌اند (یک بار و کوتاه).',
 			'- اگر داده‌ای برای یک بخش نیست (مثلاً offpage یا technical همه null)، آن متن را خالی ("") برگردان.',
 		);
@@ -292,6 +295,7 @@ function ost_writer_fallback( $p, $a ) {
 			ost_num( $sg['day90'][1] )
 		);
 	}
+	$t['scope_note'] = ost_scope_note( (array) ( $a['estimate'] ?? array() ) );
 	$t['market'] = sprintf( 'بیشترین تقاضا در خوشه‌های %s است. حدود %s از جستجوها نیت خرید، مقایسه یا مراجعه دارند؛ تمرکز ما روی همین جستجوهاست که مشتری می‌آورند.', implode( '، ', $top_cl ), ost_pct( ( $m['buyer'] ?? 0 ) / max( 1, $m['total'] ?? 1 ) ) );
 	if ( ! empty( $a['channels']['channels']['google'] ) ) {
 		$t['market'] .= sprintf( ' برآورد ما: حدود %s از کل تقاضای این بازار در گوگل اتفاق می‌افتد.', ost_pct( $a['channels']['channels']['google']['share'] ) );

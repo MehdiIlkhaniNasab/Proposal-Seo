@@ -21,6 +21,7 @@ function ost_deck_slides( $p, $a ) {
 		'profile'     => 'شناخت ما از کسب‌وکار شما',
 		'div_market'  => 'بخش ۱: بازار و رقبا',
 		'market'      => 'بازار جستجو',
+		'demand'      => 'کل تقاضای حوزه (شفافیت داده‌ها)',
 		'channels'    => 'تقاضا در همه کانال‌ها',
 		'clusters'    => 'خوشه‌های کلمات',
 		'keykw'       => 'کلمات کلیدی اصلی',
@@ -44,6 +45,7 @@ function ost_deck_slides( $p, $a ) {
 		'roadmap'     => 'نقشه راه',
 		'plan'        => 'برنامه ماه‌به‌ماه',
 		'forecast'    => 'نتیجه قابل انتظار',
+		'estimate'    => 'تخمین ترافیک و فروش',
 		'packages'    => 'پکیج‌ها',
 		'costs'       => 'جزئیات هزینه',
 		'commitments' => 'تعهدات و همکاری',
@@ -59,8 +61,8 @@ function ost_deck_slides( $p, $a ) {
 	}
 	// Nothing without data: a slide whose numbers are all zero / missing is left out.
 	$m = (array) ( $a['market'] ?? array() );
-	if ( empty( $m['total'] ) ) {
-		unset( $all['market'], $all['channels'] );
+	if ( empty( $m['total'] ) || empty( $a['estimate'] ) ) {
+		unset( $all['market'], $all['channels'], $all['demand'], $all['estimate'] );
 	}
 	if ( empty( $a['channels']['channels'] ) ) {
 		unset( $all['channels'] );
