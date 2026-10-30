@@ -159,6 +159,70 @@ add_action( 'admin_post_ost_note', function () {
 	ost_back( ost_proposal_url( $id, 'activity' ), 'یادداشت ثبت شد.' );
 } );
 
+// Screaming Frog wizard: state (polled), step confirmations, URL check, final analysis.
+add_action( 'wp_ajax_ost_sf', function () {
+	ost_ajax_guard();
+	$id = (int) ost_post( 'id' );
+	$p  = ost_proposal( $id );
+	if ( ! $p ) {
+		wp_send_json_error( array( 'msg' => 'پروپوزال پیدا نشد.' ) );
+	}
+	$do = sanitize_key( ost_post( 'do' ) );
+	if ( 'installed' === $do ) {
+		ost_sf_wizard_save( $id, array( 'installed' => 1 ) );
+	} elseif ( 'os' === $do ) {
+		ost_sf_wizard_save( $id, array( 'os' => in_array( ost_post( 'os' ), array( 'win', 'sh' ), true ) ? ost_post( 'os' ) : 'win' ) );
+	} elseif ( 'urls' === $do ) {
+		// Check (and build when missing) the URL list of one domain from its sitemaps.
+		$domain = ost_domain( (string) ost_post( 'domain' ) );
+		if ( isset( ost_domains( $p )[ $domain ] ) ) {
+			$limit = (int) ost_to_number( ost_post( 'limit' ) );
+			if ( $limit ) {
+				$p['inputs']['crawl_limit'] = $limit;
+				ost_save_proposal( $id, $p['inputs'] );
+				$p = ost_proposal( $id );
+			}
+			$audit = ost_data( $id, 'audit' )[ $domain ] ?? null;
+			if ( ! $audit || count( (array) $audit['urls'] ) < min( (int) $p['inputs']['crawl_limit'], (int) ( $audit['sitemap']['total'] ?? 0 ) ) - 1 ) {
+				// If the server dies while reading the site (time limit, fatal error), record it so the
+				// wizard can go on with the home page instead of getting stuck on this domain.
+				register_shutdown_function( function () use ( $id, $domain ) {
+					if ( ! empty( $GLOBALS['ost_sf_urlcheck'] ) ) {
+						$errs            = (array) ost_sf_wizard( $id )['url_errors'];
+						$errs[ $domain ] = 'سرور هنگام خواندن نقشه سایت متوقف شد (محدودیت زمان یا خطای هاست).';
+						ost_sf_wizard_save( $id, array( 'url_errors' => $errs ) );
+					}
+				} );
+				$GLOBALS['ost_sf_urlcheck'] = true;
+				try {
+					$r = ost_site_audit( $domain, 3, (int) $p['inputs']['crawl_limit'] );
+				} catch ( Throwable $e ) {
+					$r = new WP_Error( 'ost_audit', $e->getMessage() );
+				}
+				unset( $GLOBALS['ost_sf_urlcheck'] );
+				$errs = (array) ost_sf_wizard( $id )['url_errors'];
+				if ( is_wp_error( $r ) ) {
+					// The site cannot be read from this server (firewall, Cloudflare…): SEO Spider still
+					// crawls it from your computer, starting from the home page.
+					$errs[ $domain ] = $r->get_error_message();
+				} else {
+					unset( $errs[ $domain ] );
+					ost_put_data( $id, 'audit', $domain, $r );
+				}
+				ost_sf_wizard_save( $id, array( 'url_errors' => $errs ) );
+			}
+		}
+	} elseif ( 'urls_ok' === $do ) {
+		ost_sf_wizard_save( $id, array( 'urls_ok' => 1 ) );
+	} elseif ( 'analyze' === $do ) {
+		ost_compute( $id );
+		ost_log( $id, 'تحلیل تکنیکال با داده اسکریمینگ فراگ به‌روز شد' );
+	} elseif ( 'reset' === $do ) {
+		delete_post_meta( $id, '_ost_sf_wizard' );
+	}
+	wp_send_json_success( ost_sf_status( $id ) );
+} );
+
 // Strategy tab: pinned and excluded opportunities.
 add_action( 'admin_post_ost_save_strategy', function () {
 	ost_guard( 'ost_save_strategy' );
@@ -232,7 +296,8 @@ add_action( 'admin_post_ost_agent', function () {
 	if ( ! $p ) {
 		wp_die( 'پروپوزال پیدا نشد.' );
 	}
-	$name = 'ostorlab-sf-' . preg_replace( '/[^\w.-]/', '', $p['inputs']['domain'] ?: 'proposal-' . $p['id'] ) . ( 'win' === $os ? '.ps1' : '.sh' );
+	$name = ost_sf_script_name( $p, 'win' === $os ? '.ps1' : '.sh' );
+	ost_sf_wizard_save( $p['id'], array( 'downloaded' => 1, 'os' => $os ) );
 	nocache_headers();
 	header( 'Content-Type: text/plain; charset=utf-8' );
 	header( 'Content-Disposition: attachment; filename="' . $name . '"' );

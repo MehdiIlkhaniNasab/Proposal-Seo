@@ -89,9 +89,9 @@ $css = (string) file_get_contents( $assets['css'] ); // phpcs:ignore WordPress.W
 <?php echo $css; // phpcs:ignore WordPress.Security.EscapeOutput ?>
 </style>
 </head>
-<body class="<?php echo $args['web'] ? 'web' : 'print'; ?>">
+<body class="<?php echo $args['web'] ? 'web' : 'print'; ?><?php echo $args['download'] ? ' is-download' : ''; ?>" data-file="<?php echo esc_attr( ost_pdf_filename( $p ) ); ?>">
 <?php if ( $args['web'] ) : ?>
-<div class="toolbar"><span><?php echo esc_html( 'پروپوزال سئو ' . $client ); ?></span><button onclick="window.print()">دانلود PDF</button></div>
+<div class="toolbar"><span><?php echo esc_html( 'پروپوزال سئو ' . $client ); ?></span><button type="button" data-make-pdf>دانلود PDF</button></div>
 <?php endif; ?>
 <main class="deck">
 
@@ -666,6 +666,81 @@ endif;
 </main>
 <?php if ( $args['print'] ) : ?>
 <script>document.fonts.ready.then(function(){setTimeout(function(){window.print();},400);});</script>
+<?php endif; ?>
+<?php if ( $args['web'] || $args['download'] ) : ?>
+<div class="pdf-box" id="pdf-box" hidden>
+	<div class="pdf-card">
+		<b data-pdf-title>در حال ساخت PDF…</b>
+		<div class="pdf-bar"><i data-pdf-bar></i></div>
+		<small data-pdf-note>اسلایدها یکی‌یکی آماده می‌شوند؛ این صفحه را نبندید.</small>
+		<div class="pdf-act" data-pdf-act hidden>
+			<button type="button" data-make-pdf>دانلود دوباره</button>
+			<button type="button" class="ghost" data-pdf-close>بستن</button>
+		</div>
+	</div>
+</div>
+<script src="<?php echo esc_url( OST_URL . 'assets/vendor/html-to-image.min.js?ver=1.11.11' ); ?>"></script>
+<script src="<?php echo esc_url( OST_URL . 'assets/vendor/jspdf.umd.min.js?ver=2.5.1' ); ?>"></script>
+<script>
+/* Build the PDF in the browser: every slide is rendered by the browser itself (exact Persian
+   shaping and fonts), turned into an image and placed on a 16:9 page; the file then downloads. */
+( function () {
+	var box = document.getElementById( 'pdf-box' ), busy = false;
+	var q = function ( s ) { return box.querySelector( s ); };
+	var fa = function ( n ) { return String( n ).replace( /\d/g, function ( d ) { return '۰۱۲۳۴۵۶۷۸۹'[ d ]; } ); };
+	function make() {
+		if ( busy ) { return; }
+		if ( ! window.htmlToImage || ! window.jspdf ) { window.print(); return; }
+		busy = true;
+		box.hidden = false;
+		q( '[data-pdf-act]' ).hidden = true;
+		q( '[data-pdf-title]' ).textContent = 'در حال ساخت PDF…';
+		q( '[data-pdf-note]' ).textContent = 'اسلایدها یکی‌یکی آماده می‌شوند؛ این صفحه را نبندید.';
+		document.body.classList.add( 'is-rendering' );
+		var slides = Array.prototype.slice.call( document.querySelectorAll( '.slide' ) );
+		var pdf = new window.jspdf.jsPDF( { orientation: 'landscape', unit: 'px', format: [ 1280, 720 ], hotfixes: [ 'px_scaling' ], compress: true } );
+		var opts = { width: 1280, height: 720, pixelRatio: 1.75, quality: 0.9, backgroundColor: '#ffffff', cacheBust: false, style: { margin: '0', zoom: '1', boxShadow: 'none', borderRadius: '0' } };
+		document.fonts.ready.then( function () {
+			return window.htmlToImage.getFontEmbedCSS( document.body );
+		} ).then( function ( css ) {
+			opts.fontEmbedCSS = css;
+			var i = 0;
+			function next() {
+				if ( i >= slides.length ) { return Promise.resolve(); }
+				q( '[data-pdf-bar]' ).style.width = Math.round( 100 * i / slides.length ) + '%';
+				q( '[data-pdf-title]' ).textContent = 'در حال ساخت PDF… اسلاید ' + fa( i + 1 ) + ' از ' + fa( slides.length );
+				return window.htmlToImage.toJpeg( slides[ i ], opts ).then( function ( img ) {
+					if ( i > 0 ) { pdf.addPage( [ 1280, 720 ], 'landscape' ); }
+					pdf.addImage( img, 'JPEG', 0, 0, 1280, 720, undefined, 'FAST' );
+					i++;
+					return next();
+				} );
+			}
+			return next();
+		} ).then( function () {
+			pdf.save( document.body.dataset.file || 'seo-proposal.pdf' );
+			q( '[data-pdf-bar]' ).style.width = '100%';
+			q( '[data-pdf-title]' ).textContent = '✓ PDF دانلود شد';
+			q( '[data-pdf-note]' ).textContent = 'فایل در پوشه دانلودهای مرورگر ذخیره شد.';
+			q( '[data-pdf-act]' ).hidden = false;
+		} ).catch( function ( e ) {
+			q( '[data-pdf-title]' ).textContent = 'ساخت PDF در این مرورگر ممکن نشد';
+			q( '[data-pdf-note]' ).textContent = 'از «دانلود دوباره» یا چاپ مرورگر (Ctrl+P ← Save as PDF) استفاده کنید. ' + ( e && e.message ? e.message : '' );
+			q( '[data-pdf-act]' ).hidden = false;
+		} ).then( function () {
+			busy = false;
+			document.body.classList.remove( 'is-rendering' );
+		} );
+	}
+	document.addEventListener( 'click', function ( e ) {
+		if ( e.target.closest( '[data-make-pdf]' ) ) { make(); }
+		if ( e.target.closest( '[data-pdf-close]' ) ) { box.hidden = true; }
+	} );
+	if ( document.body.classList.contains( 'is-download' ) ) {
+		window.addEventListener( 'load', function () { setTimeout( make, 300 ); } );
+	}
+}() );
+</script>
 <?php endif; ?>
 </body>
 </html>

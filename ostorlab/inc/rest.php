@@ -36,6 +36,19 @@ add_action( 'rest_api_init', function () {
 			return array( 'targets' => $t );
 		},
 	) );
+	register_rest_route( 'ostorlab/v1', '/sf/(?P<id>\d+)/ping', array(
+		'methods'             => 'POST',
+		'permission_callback' => $auth,
+		'callback'            => function ( WP_REST_Request $req ) {
+			$data = $req->get_json_params() ?: $req->get_body_params();
+			$ping = ost_sf_record_ping( (int) $req['id'], (array) $data );
+			if ( 'done' === $ping['stage'] ) {
+				ost_compute( (int) $req['id'] );
+				ost_log( (int) $req['id'], 'خزش اسکریمینگ فراگ کامل شد و تحلیل تکنیکال به‌روز شد' );
+			}
+			return array( 'ok' => true );
+		},
+	) );
 	register_rest_route( 'ostorlab/v1', '/sf/(?P<id>\d+)/urls', array(
 		'methods'             => 'GET',
 		'permission_callback' => $auth,

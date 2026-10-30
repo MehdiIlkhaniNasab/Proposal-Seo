@@ -7,6 +7,21 @@
 
 defined( 'ABSPATH' ) || exit;
 
+if ( ! function_exists( 'array_is_list' ) ) {
+	/**
+	 * PHP 8.0 has no array_is_list() (added in 8.1).
+	 */
+	function array_is_list( array $arr ) {
+		$i = 0;
+		foreach ( $arr as $k => $v ) {
+			if ( $k !== $i++ ) {
+				return false;
+			}
+		}
+		return true;
+	}
+}
+
 /**
  * Western digits → Persian digits.
  */

@@ -395,38 +395,146 @@ function ost_sf_import( $id, $domain, $file, $name = '' ) {
 }
 
 /**
+ * Wizard state of a proposal: confirmed steps, OS, last ping of the agent.
+ */
+function ost_sf_wizard( $id ) {
+	return wp_parse_args( (array) get_post_meta( $id, '_ost_sf_wizard', true ), array(
+		'installed'  => 0,
+		'os'         => 'win',
+		'downloaded' => 0,
+		'urls_ok'    => 0,
+		'ping'       => array(),
+		'crawl'      => array(),
+		'url_errors' => array(),
+	) );
+}
+
+function ost_sf_wizard_save( $id, $changes ) {
+	update_post_meta( $id, '_ost_sf_wizard', array_merge( ost_sf_wizard( $id ), $changes ) );
+}
+
+/**
+ * A ping from the agent: stage (test | start | crawling | uploaded | done | failed), whether
+ * SEO Spider was found, its path, the OS, the computer and the domain being crawled.
+ */
+function ost_sf_record_ping( $id, $data ) {
+	$w    = ost_sf_wizard( $id );
+	$ping = array(
+		'at'       => time(),
+		'stage'    => sanitize_key( $data['stage'] ?? '' ),
+		'sf_found' => ! empty( $data['sf_found'] ) && 'false' !== $data['sf_found'],
+		'sf_path'  => sanitize_text_field( (string) ( $data['sf_path'] ?? '' ) ),
+		'os'       => sanitize_text_field( (string) ( $data['os'] ?? '' ) ),
+		'host'     => sanitize_text_field( (string) ( $data['host'] ?? '' ) ),
+		'domain'   => ost_domain( (string) ( $data['domain'] ?? '' ) ),
+		'note'     => mb_substr( sanitize_text_field( (string) ( $data['note'] ?? '' ) ), 0, 300 ),
+	);
+	$w['ping'] = $ping;
+	if ( $ping['domain'] && in_array( $ping['stage'], array( 'crawling', 'uploaded', 'failed' ), true ) ) {
+		$w['crawl'][ $ping['domain'] ] = array( 'stage' => $ping['stage'], 'at' => $ping['at'], 'note' => $ping['note'] );
+	}
+	if ( 'start' === $ping['stage'] ) {
+		$w['crawl'] = array();
+	}
+	ost_sf_wizard_save( $id, $w );
+	return $ping;
+}
+
+/**
+ * Everything the wizard screen shows (also polled by the page).
+ */
+function ost_sf_status( $id ) {
+	$p     = ost_proposal( $id );
+	$w     = ost_sf_wizard( $id );
+	$sf    = ost_data( $id, 'sf' );
+	$audit = ost_data( $id, 'audit' );
+	$ping  = (array) $w['ping'];
+	$age   = $ping ? time() - (int) $ping['at'] : null;
+	$doms  = array();
+	$all   = true;
+	foreach ( ost_domains( $p ) as $d => $role ) {
+		$got  = array_values( array_intersect( array( 'internal', 'inlinks', 'redirects' ), array_keys( (array) ( $sf[ $d ] ?? array() ) ) ) );
+		$c    = $w['crawl'][ $d ] ?? array();
+		$all  = $all && in_array( 'internal', $got, true );
+		$doms[] = array(
+			'domain' => $d,
+			'role'   => $role,
+			'urls'   => isset( $audit[ $d ] ) ? min( (int) $p['inputs']['crawl_limit'], count( (array) ( $audit[ $d ]['urls'] ?? array() ) ) + 1 ) : ( isset( $w['url_errors'][ $d ] ) ? 1 : null ),
+			'url_error' => (string) ( $w['url_errors'][ $d ] ?? '' ),
+			'got'    => $got,
+			'stage'  => $c['stage'] ?? ( $got ? 'uploaded' : 'waiting' ),
+			'note'   => $c['note'] ?? '',
+			'at'     => isset( $sf[ $d ]['at'] ) ? ost_ago( $sf[ $d ]['at'] ) : '',
+			'pages'  => (int) ( $sf[ $d ]['internal']['urls'] ?? 0 ),
+		);
+	}
+	return array(
+		'installed'  => (bool) $w['installed'],
+		'os'         => $w['os'],
+		'downloaded' => (bool) $w['downloaded'],
+		'connected'  => $ping && $age < 2 * HOUR_IN_SECONDS,
+		'sf_found'   => ! empty( $ping['sf_found'] ),
+		'ping'       => $ping ? array_merge( $ping, array( 'ago' => ost_ago( $ping['at'] ) ) ) : null,
+		'urls_ok'    => (bool) $w['urls_ok'],
+		'domains'    => $doms,
+		'all_done'   => $all && (bool) $doms,
+	);
+}
+
+/**
  * Agent script for a proposal (Windows PowerShell or bash).
+ *
+ * -Test (--test): only reports to Ostorlab that the computer can reach it and
+ * where SEO Spider is, so the wizard can confirm the connection. Without it the
+ * script crawls every domain and reports each stage, so the wizard shows live
+ * progress. Export names changed between SEO Spider versions; older names are
+ * tried when a version rejects the new ones.
  */
 function ost_sf_agent_script( $p, $os ) {
 	$base = untrailingslashit( rest_url( 'ostorlab/v1/sf/' . $p['id'] ) );
-	$vars = array( '{{BASE}}' => $base, '{{KEY}}' => $p['token'], '{{DATE}}' => gmdate( 'Y-m-d' ), '{{NAME}}' => preg_replace( '/[^\w.-]/', '', $p['inputs']['domain'] ?: 'proposal-' . $p['id'] ) );
+	$vars = array( '{{BASE}}' => $base, '{{KEY}}' => $p['token'], '{{DATE}}' => gmdate( 'Y-m-d' ), '{{NAME}}' => ost_sf_script_name( $p, '' ) );
 	if ( 'win' === $os ) {
 		return strtr( <<<'PS1'
 <#
   Ostorlab (Ronagh) - Screaming Frog agent for Windows.  Proposal: {{NAME}}  Generated {{DATE}}
-  Crawls the client site and every competitor (important pages from each sitemap) and sends the result to Ostorlab.
-
-  Run:      powershell -ExecutionPolicy Bypass -File ostorlab-sf-{{NAME}}.ps1
-  Options:  -Mode spider -Config "C:\path\limit-500.seospiderconfig"   (spider mode with your own crawl limit)
-            -SpiderPath "C:\...\ScreamingFrogSEOSpiderCli.exe"
-            -Only "competitor.ir"   (just one domain)
+  Test the connection:  powershell -ExecutionPolicy Bypass -File {{NAME}}.ps1 -Test
+  Crawl and send:       powershell -ExecutionPolicy Bypass -File {{NAME}}.ps1
+  Options: -Mode spider -Config "C:\path\limit-500.seospiderconfig"  |  -SpiderPath "C:\...\ScreamingFrogSEOSpiderCli.exe"  |  -Only "competitor.ir"
 #>
-param([string]$Mode = "list", [string]$Config = "", [string]$SpiderPath = "", [string]$Only = "")
+param([switch]$Test, [string]$Mode = "list", [string]$Config = "", [string]$SpiderPath = "", [string]$Only = "")
 $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $Base = "{{BASE}}"; $Key = "{{KEY}}"; $Headers = @{ "X-Ostorlab-Key" = $Key }
 if (-not $SpiderPath) {
   $SpiderPath = @("$env:ProgramFiles\Screaming Frog SEO Spider\ScreamingFrogSEOSpiderCli.exe", "${env:ProgramFiles(x86)}\Screaming Frog SEO Spider\ScreamingFrogSEOSpiderCli.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
 }
-if (-not ($SpiderPath -and (Test-Path $SpiderPath))) { Write-Error "ScreamingFrogSEOSpiderCli.exe not found. Install SEO Spider or pass -SpiderPath."; exit 1 }
+$Found = [bool]($SpiderPath -and (Test-Path $SpiderPath))
+function Send-Ping([string]$Stage, [string]$Domain = "", [string]$Note = "") {
+  $body = @{ stage = $Stage; sf_found = $Found; sf_path = [string]$SpiderPath; os = "windows"; host = $env:COMPUTERNAME; domain = $Domain; note = $Note } | ConvertTo-Json
+  try { Invoke-RestMethod -Method Post -Uri "$Base/ping" -Headers $Headers -ContentType "application/json; charset=utf-8" -Body ([Text.Encoding]::UTF8.GetBytes($body)) | Out-Null } catch { Write-Warning "Ping failed: $($_.Exception.Message)" }
+}
+Write-Host "[Ostorlab] Connecting to $Base ..."
+try { Invoke-RestMethod -Method Post -Uri "$Base/ping" -Headers $Headers -ContentType "application/json" -Body (@{ stage = "test"; sf_found = $Found; sf_path = [string]$SpiderPath; os = "windows"; host = $env:COMPUTERNAME } | ConvertTo-Json) | Out-Null }
+catch { Write-Error "Cannot reach Ostorlab: $($_.Exception.Message)"; exit 1 }
+Write-Host "[Ostorlab] Connection OK."
+if ($Found) { Write-Host "[Ostorlab] Screaming Frog found: $SpiderPath" } else { Write-Warning "ScreamingFrogSEOSpiderCli.exe was not found. Install SEO Spider or pass -SpiderPath." }
+if ($Test) { Write-Host "[Ostorlab] Test finished. Go back to Ostorlab: step 3 is checked automatically."; exit 0 }
+if (-not $Found) { exit 1 }
+Send-Ping "start"
 $targets = (Invoke-RestMethod -Uri "$Base/targets" -Headers $Headers).targets
+$sets = @(
+  @("--bulk-export", "Links:All Inlinks", "--save-report", "Redirects:All Redirects"),
+  @("--bulk-export", "All Inlinks", "--save-report", "Redirect & Canonical Chains"),
+  @()
+)
 foreach ($t in $targets) {
   $domain = $t.domain
   if ($Only -and $domain -ne $Only) { continue }
   Write-Host "[Ostorlab] === $domain ($($t.role)) ==="
+  Send-Ping "crawling" $domain
   $out = Join-Path $env:TEMP ("ostorlab-" + $domain + "-" + (Get-Date -Format "yyyyMMddHHmmss"))
   New-Item -ItemType Directory -Path $out | Out-Null
-  $args0 = @("--headless", "--output-folder", $out, "--export-tabs", "Internal:All", "--bulk-export", "Links:All Inlinks", "--save-report", "Redirects:All Redirects", "--overwrite")
+  $args0 = @("--headless", "--output-folder", $out, "--export-tabs", "Internal:All", "--overwrite")
   if ($Mode -eq "spider") { $args0 = @("--crawl", "https://$domain/") + $args0 }
   else {
     $list = Join-Path $out "urls.txt"
@@ -435,9 +543,15 @@ foreach ($t in $targets) {
     $args0 = @("--crawl-list", $list) + $args0
   }
   if ($Config) { $args0 += @("--config", $Config) }
-  & $SpiderPath @args0
+  $csv = Join-Path $out "internal_all.csv"
+  foreach ($ex in $sets) {
+    $sfArgs = $args0 + $ex
+    & $SpiderPath @sfArgs
+    if (Test-Path $csv) { break }
+    Write-Warning "SEO Spider did not produce internal_all.csv with these export names; trying the next set."
+  }
   $files = Get-ChildItem -Path $out -Filter *.csv -Recurse
-  if (-not $files) { Write-Warning "No export produced for $domain"; continue }
+  if (-not (Test-Path $csv)) { Send-Ping "failed" $domain "internal_all.csv was not produced (licence? language must be English)"; Remove-Item -Recurse -Force $out; continue }
   foreach ($f in $files) {
     $gz = $f.FullName + ".gz"
     $in = [IO.File]::OpenRead($f.FullName); $o = [IO.File]::Create($gz)
@@ -447,22 +561,25 @@ foreach ($t in $targets) {
     $r = & curl.exe -sS -X POST ("$Base" + "?domain=" + $domain) -H "X-Ostorlab-Key: $Key" -F "file=@$gz;type=application/gzip" -F "name=$($f.Name)"
     Write-Host $r
   }
+  Send-Ping "uploaded" $domain
   Remove-Item -Recurse -Force $out
 }
-Write-Host "[Ostorlab] Done. Refresh the technical tab in Ostorlab."
+Send-Ping "done"
+Write-Host "[Ostorlab] Done. Go back to Ostorlab: step 5 shows the result."
 PS1
 		, $vars );
 	}
 	return strtr( <<<'SH'
 #!/usr/bin/env bash
 # Ostorlab (Ronagh) - Screaming Frog agent for macOS / Linux.  Proposal: {{NAME}}  Generated {{DATE}}
-#   Run:      bash ostorlab-sf-{{NAME}}.sh
+#   Test the connection:  bash {{NAME}}.sh --test
+#   Crawl and send:       bash {{NAME}}.sh
 #   Options:  --mode spider --config limit-500.seospiderconfig   --spider /path/to/cli   --only competitor.ir
-set -euo pipefail
-BASE="{{BASE}}"; KEY="{{KEY}}"; MODE="list"; CONFIG=""; SPIDER="${SF_SPIDER:-}"; ONLY=""
+set -uo pipefail
+BASE="{{BASE}}"; KEY="{{KEY}}"; MODE="list"; CONFIG=""; SPIDER="${SF_SPIDER:-}"; ONLY=""; TEST=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --mode) MODE="$2"; shift 2 ;; --config) CONFIG="$2"; shift 2 ;;
+    --test) TEST=1; shift ;; --mode) MODE="$2"; shift 2 ;; --config) CONFIG="$2"; shift 2 ;;
     --spider) SPIDER="$2"; shift 2 ;; --only) ONLY="$2"; shift 2 ;;
     *) echo "Unknown option $1" >&2; exit 1 ;;
   esac
@@ -472,13 +589,24 @@ if [[ -z "$SPIDER" ]]; then
     [[ -n "$c" && -x "$c" ]] && { SPIDER="$c"; break; }
   done
 fi
-[[ -n "$SPIDER" ]] || { echo "Screaming Frog CLI not found (use --spider PATH)" >&2; exit 1; }
-TARGETS=$(curl -fsS "$BASE/targets?format=text" -H "X-Ostorlab-Key: $KEY")
-for DOMAIN in $TARGETS; do
+FOUND=false; [[ -n "$SPIDER" ]] && FOUND=true
+ping_ost() {
+  curl -fsS -X POST "$BASE/ping" -H "X-Ostorlab-Key: $KEY" -H "Content-Type: application/json" \
+    -d "{\"stage\":\"$1\",\"sf_found\":$FOUND,\"sf_path\":\"${SPIDER//\"/}\",\"os\":\"$(uname -s)\",\"host\":\"$(hostname)\",\"domain\":\"${2:-}\",\"note\":\"${3:-}\"}" >/dev/null
+}
+echo "[Ostorlab] Connecting to $BASE ..."
+ping_ost test || { echo "Cannot reach Ostorlab." >&2; exit 1; }
+echo "[Ostorlab] Connection OK."
+$FOUND && echo "[Ostorlab] Screaming Frog found: $SPIDER" || echo "[Ostorlab] WARNING: Screaming Frog CLI not found (use --spider PATH)." >&2
+[[ $TEST == 1 ]] && { echo "[Ostorlab] Test finished. Go back to Ostorlab: step 3 is checked automatically."; exit 0; }
+$FOUND || exit 1
+ping_ost start
+for DOMAIN in $(curl -fsS "$BASE/targets?format=text" -H "X-Ostorlab-Key: $KEY"); do
   [[ -n "$ONLY" && "$DOMAIN" != "$ONLY" ]] && continue
   echo "[Ostorlab] === $DOMAIN ==="
+  ping_ost crawling "$DOMAIN"
   OUT="$(mktemp -d -t ostorlab-XXXX)"
-  ARGS=(--headless --output-folder "$OUT" --export-tabs "Internal:All" --bulk-export "Links:All Inlinks" --save-report "Redirects:All Redirects" --overwrite)
+  ARGS=(--headless --output-folder "$OUT" --export-tabs "Internal:All" --overwrite)
   if [[ "$MODE" == "spider" ]]; then ARGS=(--crawl "https://$DOMAIN/" "${ARGS[@]}")
   else
     curl -fsS "$BASE/urls?domain=$DOMAIN" -H "X-Ostorlab-Key: $KEY" -o "$OUT/urls.txt"
@@ -486,15 +614,29 @@ for DOMAIN in $TARGETS; do
     ARGS=(--crawl-list "$OUT/urls.txt" "${ARGS[@]}")
   fi
   [[ -n "$CONFIG" ]] && ARGS+=(--config "$CONFIG")
-  "$SPIDER" "${ARGS[@]}" || echo "[Ostorlab] SEO Spider exited with $?" >&2
+  for EXTRA in "Links:All Inlinks|Redirects:All Redirects" "All Inlinks|Redirect & Canonical Chains" ""; do
+    EX=(); [[ -n "$EXTRA" ]] && EX=(--bulk-export "${EXTRA%%|*}" --save-report "${EXTRA##*|}")
+    "$SPIDER" "${ARGS[@]}" ${EX[@]+"${EX[@]}"} || echo "[Ostorlab] SEO Spider exited with $?" >&2
+    [[ -f "$OUT/internal_all.csv" ]] && break
+  done
+  if [[ ! -f "$OUT/internal_all.csv" ]]; then ping_ost failed "$DOMAIN" "internal_all.csv was not produced (licence? language must be English)"; rm -rf "$OUT"; continue; fi
   while IFS= read -r -d '' F; do
     gzip -c "$F" > "$F.gz"
     echo "[Ostorlab] Uploading $(basename "$F") ..."
     curl -sS -X POST "$BASE?domain=$DOMAIN" -H "X-Ostorlab-Key: $KEY" -F "file=@$F.gz" -F "name=$(basename "$F")"; echo
   done < <(find "$OUT" -name '*.csv' -print0)
+  ping_ost uploaded "$DOMAIN"
   rm -rf "$OUT"
 done
-echo "[Ostorlab] Done. Refresh the technical tab in Ostorlab."
+ping_ost done
+echo "[Ostorlab] Done. Go back to Ostorlab: step 5 shows the result."
 SH
 	, $vars );
+}
+
+/**
+ * File name of the agent script (without extension).
+ */
+function ost_sf_script_name( $p, $ext = '' ) {
+	return 'ostorlab-sf-' . preg_replace( '/[^\w.-]/', '', $p['inputs']['domain'] ?: 'proposal-' . $p['id'] ) . $ext;
 }

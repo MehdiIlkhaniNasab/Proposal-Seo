@@ -101,9 +101,11 @@ $here   = ost_proposal_url( $id, $tab );
 				<div class="ost-run-act">
 					<button class="ost-btn primary" data-run="1"><?php echo ost_icon( 'play', 16 ); // phpcs:ignore ?> <?php echo $a ? 'به‌روزرسانی تحلیل' : 'شروع تحلیل'; ?></button>
 					<?php if ( $a ) : ?><button class="ost-btn" data-run="fresh">تحلیل کامل از نو</button><?php endif; ?>
-					<?php if ( 'paused' === ( $job['status'] ?? '' ) ) : ?><button class="ost-btn amber" data-resume="1">ادامه تحلیل</button><?php endif; ?>
+					<?php if ( in_array( $job['status'] ?? '', array( 'paused', 'running' ), true ) ) : ?><button class="ost-btn amber" data-resume="1">ادامه تحلیل</button><?php endif; ?>
 					<span class="ost-muted">سهمیه امروز سئو سیگنال: <?php echo esc_html( ost_num( ost_ss_remaining() ) ); ?> · این پروپوزال حداکثر <?php echo esc_html( ost_num( $cost['total'] ) ); ?></span>
 				</div>
+				<?php if ( 'running' === ( $job['status'] ?? '' ) ) : ?><p class="ost-flash is-warn">تحلیل نیمه‌کاره مانده است؛ «ادامه تحلیل» را بزنید تا از همان‌جا ادامه پیدا کند.</p><?php endif; ?>
+				<div class="ost-run-note" hidden></div>
 				<div class="ost-progress"><i style="width:0"></i></div>
 				<ol class="ost-steps">
 					<?php foreach ( (array) ( $job['steps'] ?? array() ) as $k => $s ) : ?>
@@ -294,16 +296,78 @@ $here   = ost_proposal_url( $id, $tab );
 	<?php if ( ! ost_semrush_connected() ) : ?><div class="ost-notice">سمراش متصل نیست؛ وقتی اکانت فعال شد، کلید را در تنظیمات وارد و «فعال» کنید و تحلیل را به‌روز کنید تا بک‌لینک‌ها، دامنه‌های ارجاع‌دهنده و لینک صفحات پرفروش هم اضافه شوند.</div><?php endif; ?>
 <?php endif; ?>
 
-<?php elseif ( 'technical' === $tab ) : ?>
-	<section class="ost-panel">
-		<h2>اتصال اسکریمینگ فراگ</h2>
-		<p>اسکریمینگ فراگ روی کامپیوتر خودتان اجرا می‌شود. اسکریپت آماده این پروپوزال را دانلود و اجرا کنید؛ برای سایت کارفرما و همه رقبا، تا <?php echo esc_html( ost_num( $in['crawl_limit'] ) ); ?> صفحه مهم از نقشه سایت را می‌خزد و نتیجه را خودکار به اسطرلاب می‌فرستد.</p>
-		<div class="ost-row">
-			<a class="ost-btn primary" href="<?php echo esc_url( ost_action_url( 'ost_agent', array( 'id' => $id, 'os' => 'win' ) ) ); ?>"><?php echo ost_icon( 'download', 16 ); // phpcs:ignore ?> اسکریپت ویندوز (.ps1)</a>
-			<a class="ost-btn" href="<?php echo esc_url( ost_action_url( 'ost_agent', array( 'id' => $id, 'os' => 'sh' ) ) ); ?>"><?php echo ost_icon( 'download', 16 ); // phpcs:ignore ?> اسکریپت مک / لینوکس (.sh)</a>
+<?php elseif ( 'technical' === $tab ) : $sfs = ost_sf_status( $id ); $sfname = ost_sf_script_name( $p ); ?>
+	<section class="ost-panel ost-wizard" id="ost-sf" data-id="<?php echo (int) $id; ?>" data-state="<?php echo esc_attr( wp_json_encode( $sfs ) ); ?>">
+		<div class="ost-panel-head">
+			<h2><?php echo ost_icon( 'tool', 18 ); // phpcs:ignore ?> اتصال اسکریمینگ فراگ — قدم‌به‌قدم</h2>
+			<button type="button" class="ost-btn sm ghost" data-sf="reset" data-confirm="مراحل اتصال از اول شروع شود؟ (داده‌های خزش قبلی حفظ می‌شود)">شروع دوباره</button>
 		</div>
-		<pre class="ost-code" dir="ltr">powershell -ExecutionPolicy Bypass -File ostorlab-sf-<?php echo esc_html( $in['domain'] ?: 'proposal-' . $id ); ?>.ps1</pre>
-		<details><summary>آپلود دستی خروجی‌ها</summary>
+		<p class="ost-muted">اسکریمینگ فراگ روی کامپیوتر خودتان اجرا می‌شود و نتیجه را خودکار به اسطرلاب می‌فرستد. هر مرحله را انجام دهید؛ بعد از تأیید یا تست موفق، مرحله بعد باز می‌شود.</p>
+		<ol class="ost-wsteps">
+			<li data-step="1">
+				<header><span class="n">۱</span><div><b>نصب اسکریمینگ فراگ</b><small>SEO Spider با لایسنس فعال</small></div><em class="st"></em></header>
+				<div class="body">
+					<ul>
+						<li>SEO Spider را از <a href="https://www.screamingfrog.co.uk/seo-spider/" target="_blank" rel="noopener">screamingfrog.co.uk</a> دانلود و نصب کنید (ویندوز یا مک).</li>
+						<li>لایسنس را فعال کنید: اجرای خط فرمان (headless) و خزش بیش از ۵۰۰ آدرس فقط با لایسنس ممکن است.</li>
+						<li>زبان برنامه انگلیسی بماند (نام ستون‌های خروجی انگلیسی خوانده می‌شود).</li>
+						<li>یک بار برنامه را باز و بسته کنید تا تنظیمات اولیه ساخته شود.</li>
+					</ul>
+					<button type="button" class="ost-btn primary" data-sf="installed">نصب کردم و لایسنس فعال است</button>
+				</div>
+			</li>
+			<li data-step="2">
+				<header><span class="n">۲</span><div><b>دانلود اسکریپت اتصال</b><small>مخصوص همین پروپوزال؛ آدرس و کلید داخلش است</small></div><em class="st"></em></header>
+				<div class="body">
+					<div class="ost-seg" data-os>
+						<button type="button" data-os-pick="win">ویندوز</button>
+						<button type="button" data-os-pick="sh">مک / لینوکس</button>
+					</div>
+					<p data-os-show="win">فایل <code dir="ltr"><?php echo esc_html( $sfname ); ?>.ps1</code> را دانلود کنید و در یک پوشه ساده بگذارید، مثلاً <code dir="ltr">C:\ostorlab</code>.</p>
+					<p data-os-show="sh">فایل <code dir="ltr"><?php echo esc_html( $sfname ); ?>.sh</code> را دانلود کنید و در یک پوشه ساده بگذارید، مثلاً <code dir="ltr">~/ostorlab</code>.</p>
+					<a class="ost-btn primary" data-os-show="win" data-sf-download href="<?php echo esc_url( ost_action_url( 'ost_agent', array( 'id' => $id, 'os' => 'win' ) ) ); ?>"><?php echo ost_icon( 'download', 16 ); // phpcs:ignore ?> دانلود اسکریپت ویندوز</a>
+					<a class="ost-btn primary" data-os-show="sh" data-sf-download href="<?php echo esc_url( ost_action_url( 'ost_agent', array( 'id' => $id, 'os' => 'sh' ) ) ); ?>"><?php echo ost_icon( 'download', 16 ); // phpcs:ignore ?> دانلود اسکریپت مک / لینوکس</a>
+				</div>
+			</li>
+			<li data-step="3">
+				<header><span class="n">۳</span><div><b>تست اتصال</b><small>کامپیوتر شما ← اسطرلاب، و پیدا شدن SEO Spider</small></div><em class="st"></em></header>
+				<div class="body">
+					<p data-os-show="win">PowerShell را در همان پوشه باز کنید (در پوشه کلیک راست ← Open in Terminal) و این فرمان را اجرا کنید:</p>
+					<p data-os-show="sh">ترمینال را در همان پوشه باز کنید و این فرمان را اجرا کنید:</p>
+					<div class="ost-cmd" data-os-show="win"><code dir="ltr">powershell -ExecutionPolicy Bypass -File <?php echo esc_html( $sfname ); ?>.ps1 -Test</code><button type="button" class="ost-btn sm" data-copy="powershell -ExecutionPolicy Bypass -File <?php echo esc_attr( $sfname ); ?>.ps1 -Test">کپی</button></div>
+					<div class="ost-cmd" data-os-show="sh"><code dir="ltr">bash <?php echo esc_html( $sfname ); ?>.sh --test</code><button type="button" class="ost-btn sm" data-copy="bash <?php echo esc_attr( $sfname ); ?>.sh --test">کپی</button></div>
+					<div class="ost-live" data-ping><span class="spin"></span> منتظر پیام اسکریپت… (این صفحه خودکار بررسی می‌کند)</div>
+					<details class="ost-help"><summary>تست موفق نشد؟</summary>
+						<ul>
+							<li>«Cannot reach Ostorlab»: اینترنت یا VPN کامپیوتر را بررسی کنید؛ آدرس سایت باید از همان کامپیوتر باز شود.</li>
+							<li>«Screaming Frog not found»: مسیر برنامه را بدهید: <code dir="ltr">-SpiderPath "C:\Program Files\Screaming Frog SEO Spider\ScreamingFrogSEOSpiderCli.exe"</code> (مک: <code dir="ltr">--spider</code>).</li>
+							<li>خطای ExecutionPolicy در ویندوز: فرمان را دقیقاً با <code dir="ltr">-ExecutionPolicy Bypass</code> اجرا کنید.</li>
+						</ul>
+					</details>
+				</div>
+			</li>
+			<li data-step="4">
+				<header><span class="n">۴</span><div><b>بررسی صفحاتی که خزیده می‌شوند</b><small>صفحات مهم از نقشه سایت هر دامنه</small></div><em class="st"></em></header>
+				<div class="body">
+					<div class="ost-row"><label>حداکثر صفحه برای هر دامنه <input type="text" class="qty" data-limit value="<?php echo esc_attr( ost_num( $in['crawl_limit'] ) ); ?>"></label><button type="button" class="ost-btn primary" data-sf="urls">بررسی دامنه‌ها</button></div>
+					<table class="ost-table sm"><thead><tr><th>دامنه</th><th>نقش</th><th>صفحات آماده خزش</th></tr></thead><tbody data-urls></tbody></table>
+				</div>
+			</li>
+			<li data-step="5">
+				<header><span class="n">۵</span><div><b>اجرای خزش و تحلیل</b><small>کارفرما و همه رقبا؛ نتیجه خودکار می‌رسد</small></div><em class="st"></em></header>
+				<div class="body">
+					<p>همان فرمان، این بار بدون تست. پنجره را تا پایان باز بگذارید؛ بسته به تعداد صفحات چند دقیقه تا یک ساعت طول می‌کشد.</p>
+					<div class="ost-cmd" data-os-show="win"><code dir="ltr">powershell -ExecutionPolicy Bypass -File <?php echo esc_html( $sfname ); ?>.ps1</code><button type="button" class="ost-btn sm" data-copy="powershell -ExecutionPolicy Bypass -File <?php echo esc_attr( $sfname ); ?>.ps1">کپی</button></div>
+					<div class="ost-cmd" data-os-show="sh"><code dir="ltr">bash <?php echo esc_html( $sfname ); ?>.sh</code><button type="button" class="ost-btn sm" data-copy="bash <?php echo esc_attr( $sfname ); ?>.sh">کپی</button></div>
+					<table class="ost-table sm"><thead><tr><th>دامنه</th><th>وضعیت</th><th>فایل‌های رسیده</th><th>صفحات خزیده</th></tr></thead><tbody data-crawl></tbody></table>
+					<div class="ost-final" data-final hidden>
+						<b>✓ خزش همه دامنه‌ها رسید.</b>
+						<button type="button" class="ost-btn primary" data-sf="analyze"><?php echo ost_icon( 'play', 16 ); // phpcs:ignore ?> شروع تحلیل تکنیکال</button>
+					</div>
+				</div>
+			</li>
+		</ol>
+		<details class="ost-help"><summary>آپلود دستی خروجی‌ها (بدون اسکریپت)</summary>
 			<form method="post" enctype="multipart/form-data" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="ost-row">
 				<?php ost_form_fields( 'ost_sf_upload' ); ?><input type="hidden" name="id" value="<?php echo (int) $id; ?>">
 				<select name="domain"><?php foreach ( ost_domains( $p ) as $d => $r ) { echo '<option>' . esc_html( $d ) . '</option>'; } ?></select>
@@ -408,7 +472,7 @@ $here   = ost_proposal_url( $id, $tab );
 		<aside class="ost-panel">
 			<h2>خروجی</h2>
 			<p><a class="ost-btn primary lg block" target="_blank" href="<?php echo esc_url( ost_url( 'proposal/' . $id . '/pdf' ) ); ?>"><?php echo ost_icon( 'download' ); // phpcs:ignore ?> دانلود PDF اسلایدی</a></p>
-			<p class="ost-muted"><?php echo 'gotenberg' === ost_setting( 'pdf_service' ) ? 'PDF روی سرور ساخته و مستقیم دانلود می‌شود.' : 'پنجره چاپ مرورگر باز می‌شود؛ مقصد را «Save as PDF» بگذارید (اندازه و حاشیه‌ها خودکار تنظیم است؛ تیک Background graphics روشن باشد).'; ?></p>
+			<p class="ost-muted"><?php echo 'gotenberg' === ost_setting( 'pdf_service' ) ? 'PDF روی سرور ساخته و مستقیم دانلود می‌شود.' : 'یک صفحه تازه باز می‌شود، اسلایدها یکی‌یکی آماده می‌شوند و فایل PDF مستقیم دانلود می‌شود (حدود ۱۰ تا ۳۰ ثانیه).'; ?></p>
 			<p><a class="ost-btn block" target="_blank" href="<?php echo esc_url( ost_url( 'proposal/' . $id . '/deck' ) ); ?>"><?php echo ost_icon( 'eye', 16 ); // phpcs:ignore ?> پیش‌نمایش اسلایدها</a></p>
 			<?php if ( $shared ) : ?>
 				<label>لینک نسخه وب برای کارفرما<span class="ost-copy"><input type="text" dir="ltr" readonly value="<?php echo esc_url( $link ); ?>"><button type="button" class="ost-btn sm" data-copy="<?php echo esc_url( $link ); ?>">کپی</button></span><small>هر بار که کارفرما لینک را باز کند، در تب «پیگیری» ثبت می‌شود.</small></label>

@@ -89,7 +89,7 @@ function ost_deck_html( $id, $args = array() ) {
 	if ( ! $p || ! $a ) {
 		return '';
 	}
-	$args = wp_parse_args( $args, array( 'inline' => false, 'print' => false, 'web' => false ) );
+	$args = wp_parse_args( $args, array( 'inline' => false, 'print' => false, 'web' => false, 'download' => false ) );
 	ob_start();
 	ost_view( 'deck/deck', array(
 		'p'      => $p,

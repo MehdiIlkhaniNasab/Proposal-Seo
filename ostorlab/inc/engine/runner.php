@@ -83,6 +83,13 @@ function ost_job_tick( $id ) {
 	if ( empty( $job['steps'] ) ) {
 		return $job;
 	}
+	// A step left "running" means the server stopped in the middle of it last time.
+	foreach ( $job['steps'] as $k => $s ) {
+		if ( 'running' === $s['status'] ) {
+			$job['steps'][ $k ]['status'] = 'error';
+			$job['steps'][ $k ]['msg']    = $s['msg'] ?: 'سرور وسط این مرحله متوقف شد (معمولاً محدودیت زمان اجرای PHP یا حافظه هاست). مراحل بعدی ادامه پیدا کرد.';
+		}
+	}
 	$key = null;
 	foreach ( $job['steps'] as $k => $s ) {
 		if ( 'pending' === $s['status'] ) {
@@ -96,7 +103,24 @@ function ost_job_tick( $id ) {
 		ost_job_status( $id, 'ready' );
 		return $job;
 	}
-	$res = ost_job_step( $p, $key );
+	// Mark the step as running: if the server dies inside it (time / memory limit,
+	// fatal error), the next tick and the shutdown handler record it as failed and
+	// the job moves on instead of retrying the same step forever.
+	if ( function_exists( 'set_time_limit' ) ) {
+		@set_time_limit( 300 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors
+	}
+	wp_raise_memory_limit( 'admin' );
+	$job['steps'][ $key ]['status']  = 'running';
+	$job['steps'][ $key ]['started'] = time();
+	update_post_meta( $id, '_ost_job', $job );
+	$GLOBALS['ost_running_step'] = array( $id, $key );
+	register_shutdown_function( 'ost_job_shutdown' );
+	try {
+		$res = ost_job_step( $p, $key );
+	} catch ( Throwable $e ) {
+		$res = new WP_Error( 'ost_step_fatal', 'خطای داخلی در این مرحله: ' . mb_substr( $e->getMessage(), 0, 220 ) );
+	}
+	unset( $GLOBALS['ost_running_step'] );
 	if ( is_wp_error( $res ) && 'ost_ss_cap' === $res->get_error_code() ) {
 		$job['status'] = 'paused';
 		$job['msg']    = $res->get_error_message();
@@ -116,6 +140,29 @@ function ost_job_tick( $id ) {
 	}
 	update_post_meta( $id, '_ost_job', $job );
 	return $job;
+}
+
+/**
+ * The request died inside a step (fatal error, time or memory limit): record it.
+ */
+function ost_job_shutdown() {
+	if ( empty( $GLOBALS['ost_running_step'] ) ) {
+		return;
+	}
+	list( $id, $key ) = $GLOBALS['ost_running_step'];
+	$err = error_get_last();
+	$job = (array) get_post_meta( $id, '_ost_job', true );
+	if ( isset( $job['steps'][ $key ] ) && 'running' === $job['steps'][ $key ]['status'] ) {
+		$msg = $err ? preg_replace( '/ in \/.*$/s', '', (string) $err['message'] ) : '';
+		if ( false !== stripos( $msg, 'Maximum execution time' ) ) {
+			$msg = 'محدودیت زمان اجرای PHP هاست تمام شد';
+		} elseif ( false !== stripos( $msg, 'memory size' ) ) {
+			$msg = 'حافظه PHP هاست کافی نبود';
+		}
+		$job['steps'][ $key ]['status'] = 'error';
+		$job['steps'][ $key ]['msg']    = 'سرور وسط این مرحله متوقف شد' . ( $msg ? ' (' . mb_substr( $msg, 0, 160 ) . ')' : '' ) . '؛ تحلیل از مرحله بعد ادامه پیدا می‌کند.';
+		update_post_meta( $id, '_ost_job', $job );
+	}
 }
 
 /**

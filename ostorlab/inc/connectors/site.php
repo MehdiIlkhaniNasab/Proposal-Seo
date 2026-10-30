@@ -201,13 +201,17 @@ function ost_site_sitemaps( $base, $from_robots, $collect = 500 ) {
 	$urls  = array();
 	$found = false;
 	$by_file = array();
-	while ( $queue && count( $seen ) < 60 ) {
+	$t0      = microtime( true );
+	$read    = 0;
+	// Time budget: big shops have dozens of sitemap files; reading all of them can
+	// outlast the host's PHP time limit. The rest is estimated from the files read.
+	while ( $queue && count( $seen ) < 40 && microtime( true ) - $t0 < 25 ) {
 		$sm = array_shift( $queue );
 		if ( isset( $seen[ $sm ] ) ) {
 			continue;
 		}
 		$seen[ $sm ] = true;
-		$r           = ost_site_get( $sm, 20 );
+		$r           = ost_site_get( $sm, 12 );
 		if ( is_wp_error( $r ) || 200 !== $r['code'] ) {
 			continue;
 		}
@@ -234,6 +238,7 @@ function ost_site_sitemaps( $base, $from_robots, $collect = 500 ) {
 		if ( ! $from_robots ) {
 			$queue = array(); // A plain urlset at a guessed address: do not try the other guesses.
 		}
+		$read++;
 		$type            = ost_site_sitemap_type( $sm );
 		$n               = count( $locs[1] );
 		$total          += $n;
@@ -254,7 +259,12 @@ function ost_site_sitemaps( $base, $from_robots, $collect = 500 ) {
 		}
 		unset( $list );
 	}
-	return array( 'found' => $found, 'files' => count( $seen ), 'total' => $total, 'types' => $types, 'urls' => array_values( array_unique( $urls ) ) );
+	$left      = count( array_diff( array_unique( $queue ), array_keys( $seen ) ) );
+	$estimated = $left > 0 && $read > 0;
+	if ( $estimated ) {
+		$total += (int) round( $left * $total / $read );
+	}
+	return array( 'found' => $found, 'files' => count( $seen ) + $left, 'total' => $total, 'estimated' => $estimated, 'types' => $types, 'urls' => array_values( array_unique( $urls ) ) );
 }
 
 /**
@@ -292,6 +302,9 @@ function ost_site_sitemap_type( $url ) {
  */
 function ost_site_audit( $domain, $sample = 14, $collect = 500 ) {
 	$base = ost_home_url( $domain );
+	if ( function_exists( 'set_time_limit' ) ) {
+		@set_time_limit( 300 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors
+	}
 	$home = ost_site_get( $base, 20 );
 	if ( is_wp_error( $home ) ) {
 		$home = ost_site_get( 'https://www.' . ost_domain( $domain ) . '/', 20 );

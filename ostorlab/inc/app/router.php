@@ -203,7 +203,8 @@ function ost_output_deck( $id, $pdf ) {
 			}
 		}
 	}
-	echo ost_deck_html( $id, array( 'print' => $pdf, 'web' => ! $pdf ) ); // phpcs:ignore WordPress.Security.EscapeOutput
+	// Without a PDF service the browser builds the PDF file itself and downloads it.
+	echo ost_deck_html( $id, $pdf ? array( 'download' => true, 'inline' => true ) : array( 'web' => true ) ); // phpcs:ignore WordPress.Security.EscapeOutput
 	exit;
 }
 
