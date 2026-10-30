@@ -18,6 +18,7 @@ function ost_deck_slides( $p, $a ) {
 	$all  = array(
 		'cover'       => 'جلد',
 		'summary'     => 'خلاصه اجرایی',
+		'profile'     => 'شناخت ما از کسب‌وکار شما',
 		'div_market'  => 'بخش ۱: بازار و رقبا',
 		'market'      => 'بازار جستجو',
 		'channels'    => 'تقاضا در همه کانال‌ها',
@@ -39,6 +40,7 @@ function ost_deck_slides( $p, $a ) {
 		'opps'        => 'پیشنهاد اصلی و فرصت‌های بازار',
 		'strategy'    => 'استراتژی شروع: نقشه فرصت‌ها',
 		'strategy_plan' => 'نقطه شروع و ۹۰ روز اول',
+		'astrolabe'   => 'اسطرلاب مسیر رشد',
 		'roadmap'     => 'نقشه راه',
 		'plan'        => 'برنامه ماه‌به‌ماه',
 		'forecast'    => 'نتیجه قابل انتظار',
@@ -49,6 +51,12 @@ function ost_deck_slides( $p, $a ) {
 		'portfolio'   => 'نمونه‌کارها',
 		'closing'     => 'قدم بعدی',
 	);
+	if ( 'confirmed' !== ost_discovery( $p['id'] )['status'] ) {
+		unset( $all['profile'] );
+	}
+	if ( empty( $a['roadmap'] ) ) {
+		unset( $all['astrolabe'] );
+	}
 	// Nothing without data: a slide whose numbers are all zero / missing is left out.
 	$m = (array) ( $a['market'] ?? array() );
 	if ( empty( $m['total'] ) ) {

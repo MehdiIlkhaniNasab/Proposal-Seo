@@ -414,3 +414,46 @@ body.is-rendering .slide { zoom: 1 !important; }
 .s-opps .opp-card p { font-size: 13.5px; -webkit-line-clamp: 7; }
 .s-opps .opp-card em { font-size: 13.5px; }
 .opp-card em { display: block; margin-top: auto; padding-top: 8px; border-top: 1px dashed var(--line); }
+
+/* Business profile. */
+.g-prof { grid-template-columns: 1.25fr 1fr; align-items: stretch; height: 100%; }
+.prof-main { display: flex; flex-direction: column; gap: 14px; background: linear-gradient(165deg, var(--sky), #fff 55%); }
+.prof-tag, .prof-excl h4 { align-self: flex-start; font-size: 12px; font-weight: 800; color: var(--primary); background: #fff; border: 1px solid var(--sky2); padding: 2px 12px; border-radius: 99px; }
+.prof-sum { font-size: 18px; line-height: 1.9; color: var(--dark); font-weight: 600; }
+.prof-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.prof-chips i { font-style: normal; font-size: 14px; font-weight: 700; padding: 6px 14px; border-radius: 12px; background: #fff; border: 1px solid var(--sky2); color: var(--dark); }
+.prof-chips.muted i { background: #F1F5F9; border-color: #E2E8F0; color: #475569; text-decoration: line-through; text-decoration-color: #94A3B8; }
+.prof-focus { margin-top: auto; border-radius: 14px; padding: 12px 16px; background: linear-gradient(135deg, var(--dark), var(--primary)); color: #fff; }
+.prof-focus span { display: block; font-size: 12px; color: #BFDBFE; font-weight: 700; }
+.prof-focus b { font-size: 16px; line-height: 1.7; }
+.prof-side { display: flex; flex-direction: column; gap: 14px; }
+.prof-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.prof-facts div { background: var(--soft); border: 1px solid #E6EEF7; border-radius: 14px; padding: 10px 14px; }
+.prof-facts span { display: block; font-size: 12px; color: var(--ink2); font-weight: 700; }
+.prof-facts b { font-size: 15px; color: var(--dark); line-height: 1.6; }
+.prof-excl { flex: 1; border: 1px dashed #CBD5E1; border-radius: 16px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.prof-excl p { font-size: 13px; color: var(--ink2); line-height: 1.8; }
+.prof-excl p b { color: var(--dark); }
+
+/* Astrolabe roadmap. */
+.s-astro .sh { margin-bottom: 8px; }
+.g-astro { grid-template-columns: 476px 1fr; gap: 28px; align-items: center; height: 100%; }
+.astro-wrap svg { display: block; direction: ltr; }
+.astro-legend h3 { font-size: 15px; font-weight: 900; color: var(--dark); margin: 0 0 8px; }
+.astro-ph { list-style: none; margin: 0 0 14px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.astro-ph li { display: flex; gap: 10px; align-items: center; }
+.astro-ph i { flex: none; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; font-style: normal; font-weight: 900; color: #fff; }
+.astro-ph i.ph0 { background: #5DB3EC; color: #0F1E33; } .astro-ph i.ph1 { background: #2E8FDB; } .astro-ph i.ph2 { background: #1570C2; } .astro-ph i.ph3 { background: #0B529A; } .astro-ph i.ph4 { background: #0A3566; }
+.astro-ph b { display: block; font-size: 14px; font-weight: 800; color: var(--dark); line-height: 1.5; }
+.astro-ph small { display: block; font-size: 11.5px; color: var(--ink2); line-height: 1.5; }
+.astro-ms { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; }
+.astro-ms li { display: flex; gap: 8px; align-items: center; font-size: 13px; min-width: 0; }
+.astro-ms i { flex: none; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: #D97706; color: #fff; font-style: normal; font-weight: 900; font-size: 12px; }
+.astro-ms b { font-weight: 800; color: var(--dark); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.astro-ms small { flex: none; color: var(--ink2); font-size: 11.5px; }
+.s-astro .note { margin-top: 10px; font-size: 11.5px; }
+.prof-chips.big i { font-size: 16px; padding: 8px 16px; }
+.prof-aud { font-size: 15px; color: var(--ink); }
+.prof-aud span { font-size: 12px; font-weight: 800; color: var(--primary); margin-inline-end: 6px; }
+.prof-excl { flex: none; }
+.prof-facts div:only-child, .prof-facts div:last-child:nth-child(odd) { grid-column: 1 / -1; }

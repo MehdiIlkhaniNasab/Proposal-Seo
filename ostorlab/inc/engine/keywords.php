@@ -56,11 +56,20 @@ function ost_kw_overlap( $word, $seed ) {
  * @param array $raw  seed => ost_ss_keyword() result.
  * @return array{clusters: array, total: int, buyer: int, keywords: int, money: array, questions: array}
  */
-function ost_build_market( $raw, $review = array() ) {
-	$best   = array(); // word key => [seed, overlap, row].
-	$drop   = array_flip( (array) ( $review['drop'] ?? array() ) );
-	$rescue = array_flip( (array) ( $review['keep'] ?? array() ) );
-	$stats  = array( 'zero' => 0, 'irrelevant' => 0, 'ai' => 0, 'kept' => 0 );
+function ost_build_market( $raw, $review = array(), $rules = array() ) {
+	$best    = array(); // word key => [seed, overlap, row].
+	$drop    = array_flip( (array) ( $review['drop'] ?? array() ) );
+	$why     = (array) ( $review['why'] ?? array() );
+	$rescue  = array_flip( (array) ( $review['keep'] ?? array() ) );
+	$unsure  = array_flip( (array) ( $review['unsure'] ?? array() ) );
+	$ev      = $rules['evidence'] ?? null;
+	$stats   = array( 'zero' => 0, 'user' => 0, 'ai' => 0, 'irrelevant' => 0, 'evidence' => 0, 'kept' => 0 );
+	$dropped = array(); // norm => [w, v, seed, by, why].
+	$out     = function ( $k, $row, $seed, $by, $reason ) use ( &$dropped ) {
+		if ( ! isset( $dropped[ $k ] ) ) {
+			$dropped[ $k ] = array( 'w' => $row['w'], 'v' => (int) $row['v'], 'seed' => $seed, 'by' => $by, 'why' => $reason );
+		}
+	};
 	foreach ( $raw as $seed => $r ) {
 		if ( empty( $r['list'] ) && empty( $r['volume'] ) ) {
 			continue;
@@ -70,19 +79,35 @@ function ost_build_market( $raw, $review = array() ) {
 			array_unshift( $rows, array( 'w' => $seed, 'v' => (int) $r['volume'], 'c' => '' ) );
 		}
 		foreach ( $rows as $row ) {
-			$k  = ost_norm( $row['w'] );
-			// Quality gate: no search volume, not about the seed's subject, or rejected by the AI review.
+			$k = ost_norm( $row['w'] );
+			// Quality gate: no search volume, excluded by the user / the business profile,
+			// rejected by the AI review, not about the seed's subject, or uncertain with no
+			// site ranking for it.
 			if ( (int) $row['v'] <= 0 ) {
 				$stats['zero']++;
 				continue;
 			}
-			if ( isset( $drop[ $k ] ) ) {
-				$stats['ai']++;
-				continue;
+			if ( isset( $dropped[ $k ] ) && 'rule' !== $dropped[ $k ]['by'] ) {
+				continue; // The topic rule is per seed; every other decision is final.
 			}
-			if ( ! isset( $rescue[ $k ] ) && ! ost_kw_relevant( $row['w'], $seed ) ) {
-				$stats['irrelevant']++;
-				continue;
+			if ( ! isset( $rules['restore'][ $k ] ) ) {
+				$ux = $rules ? ost_kw_user_excluded( $row['w'], $rules ) : '';
+				if ( '' !== $ux ) {
+					$out( $k, $row, $seed, 'user', $ux );
+					continue;
+				}
+				if ( isset( $drop[ $k ] ) ) {
+					$out( $k, $row, $seed, 'ai', $why[ $k ] ?? 'بی‌ربط با این کسب‌وکار' );
+					continue;
+				}
+				if ( ! isset( $rescue[ $k ] ) && ! ost_kw_relevant( $row['w'], $seed ) ) {
+					$out( $k, $row, $seed, 'rule', 'به موضوع «' . $seed . '» مربوط نیست' );
+					continue;
+				}
+				if ( null !== $ev && isset( $unsure[ $k ] ) && ! ost_kw_has_evidence( $row['w'], $ev ) ) {
+					$out( $k, $row, $seed, 'evidence', 'مرتبط بودنش قطعی نیست و هیچ رقیبی برایش رتبه ندارد' );
+					continue;
+				}
 			}
 			$ov = ost_kw_overlap( $row['w'], $seed ) + ( $k === ost_norm( $seed ) ? 2 : 0 );
 			if ( ! isset( $best[ $k ] ) || $ov > $best[ $k ][1] ) {
@@ -90,6 +115,13 @@ function ost_build_market( $raw, $review = array() ) {
 			}
 		}
 	}
+	$dropped = array_values( array_diff_key( $dropped, $best ) );
+	foreach ( $dropped as $d ) {
+		$stats[ 'rule' === $d['by'] ? 'irrelevant' : $d['by'] ]++;
+	}
+	usort( $dropped, function ( $a, $b ) {
+		return $b['v'] <=> $a['v'];
+	} );
 	$clusters = array();
 	foreach ( $raw as $seed => $r ) {
 		$clusters[ $seed ] = array(
@@ -146,6 +178,11 @@ function ost_build_market( $raw, $review = array() ) {
 	uasort( $clusters, function ( $a, $b ) {
 		return $b['total'] <=> $a['total'];
 	} );
+	// A seed whose every keyword was removed (e.g. a product the business does not sell) is no cluster.
+	$empty    = array_keys( array_filter( $clusters, function ( $c ) {
+		return 0 === $c['total'];
+	} ) );
+	$clusters = array_diff_key( $clusters, array_flip( $empty ) );
 	usort( $money, function ( $a, $b ) {
 		return $b['v'] <=> $a['v'];
 	} );
@@ -170,6 +207,8 @@ function ost_build_market( $raw, $review = array() ) {
 		'questions' => array_slice( $questions, 0, 40 ),
 		'all_words' => array_keys( $best ),
 		'filtered'  => array_merge( $stats, array( 'kept' => count( $best ) ) ),
+		'dropped'   => array_slice( $dropped, 0, 400 ),
+		'empty_seeds' => $empty,
 		'key'       => ost_key_keywords( $best, $review ),
 		'rows'      => $all_rows,
 	);

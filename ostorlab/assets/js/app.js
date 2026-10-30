@@ -88,6 +88,11 @@
 				say( r.data.msg, 'is-warn' );
 				return;
 			}
+			if ( r.data.status === 'waiting' && r.data.goto ) {
+				say( r.data.msg + ' در حال باز کردن صفحه…', 'is-warn' );
+				window.location.href = r.data.goto;
+				return;
+			}
 			window.location.reload();
 		} );
 		const start = ( fresh ) => {
@@ -115,11 +120,16 @@
 			fails = 0;
 			tick( true );
 		} ) );
-		if ( run.dataset.autorun === '1' ) {
+		if ( run.dataset.autorun === '1' || run.dataset.autorun === 'resume' ) {
 			const u = new URL( window.location.href );
 			[ 'autorun', 'ost_msg', 'ost_ok' ].forEach( ( k ) => u.searchParams.delete( k ) );
 			history.replaceState( null, '', u.toString() );
-			start( false );
+			if ( run.dataset.autorun === 'resume' ) {
+				lock( true );
+				tick( true );
+			} else {
+				start( false );
+			}
 		}
 	}
 
@@ -247,11 +257,24 @@
 				return;
 			}
 			ai.disabled = true;
-			ai.textContent = 'در حال نوشتن… (تا ۲ دقیقه)';
-			post( 'ost_ai_texts', { id: ai.dataset.id } ).then( ( r ) => {
-				alert( r.data.msg );
-				window.location.reload();
-			} );
+			// Three smaller requests (market analysis, texts, SWOT): none is cut off.
+			const parts = [ [ 'market', 'تحلیل کانال‌ها و فرصت‌ها' ], [ 'texts', 'متن‌ها' ], [ 'swot', 'قوت و ضعف' ] ];
+			const errs = [];
+			const next = ( i ) => {
+				if ( i >= parts.length ) {
+					alert( errs.length ? 'بخشی ناموفق بود:\n' + errs.join( '\n' ) : 'متن‌ها با هوش مصنوعی بازنویسی شد.' );
+					window.location.reload();
+					return;
+				}
+				ai.textContent = 'در حال نوشتن ' + parts[ i ][ 1 ] + '… (' + fa( String( i + 1 ) ) + ' از ۳)';
+				post( 'ost_ai_texts', { id: ai.dataset.id, part: parts[ i ][ 0 ] } ).then( ( r ) => {
+					if ( ! r.success ) {
+						errs.push( parts[ i ][ 1 ] + ': ' + ( r.data && r.data.msg ? r.data.msg : 'خطا' ) );
+					}
+					next( i + 1 );
+				} );
+			};
+			next( 0 );
 		} );
 	}
 
@@ -347,4 +370,14 @@
 			list.closest( '.ost-panel' ).scrollIntoView( { behavior: 'smooth' } );
 		} ) );
 	}
+	// Long form actions (reading sites, AI): show that something is happening.
+	document.querySelectorAll( 'form' ).forEach( ( f ) => f.addEventListener( 'submit', ( e ) => {
+		const b = e.submitter;
+		if ( b && b.dataset.busy ) {
+			setTimeout( () => {
+				b.disabled = true;
+				b.textContent = b.dataset.busy;
+			}, 0 );
+		}
+	} ) );
 }() );

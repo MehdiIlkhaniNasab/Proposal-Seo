@@ -79,7 +79,7 @@ $here   = ost_proposal_url( $id, $tab );
 
 <nav class="ost-tabs">
 	<?php foreach ( $tabs as $k => $t ) : ?>
-		<a href="<?php echo esc_url( $url( $k ) ); ?>" class="<?php echo $tab === $k ? 'on' : ''; ?>"><?php echo ost_icon( $t[1], 16 ); // phpcs:ignore ?><?php echo esc_html( $t[0] ); ?><?php echo 'activity' === $k && $fu['date'] && $fu['date'] <= $today ? '<em>!</em>' : ''; ?></a>
+		<a href="<?php echo esc_url( $url( $k ) ); ?>" class="<?php echo $tab === $k ? 'on' : ''; ?>"><?php echo ost_icon( $t[1], 16 ); // phpcs:ignore ?><?php echo esc_html( $t[0] ); ?><?php echo 'activity' === $k && $fu['date'] && $fu['date'] <= $today ? '<em>!</em>' : ''; ?><?php echo 'waiting' === ( $job['status'] ?? '' ) && false !== strpos( (string) ( $job['goto'] ?? '' ), '/' . $k ) ? '<em>!</em>' : ''; ?></a>
 	<?php endforeach; ?>
 </nav>
 
@@ -97,11 +97,12 @@ $here   = ost_proposal_url( $id, $tab );
 		<section class="ost-panel">
 			<h2>اجرای تحلیل</h2>
 			<p class="ost-muted">هر مرحله جداگانه اجرا می‌شود تا هیچ درخواستی به محدودیت زمان سرور نخورد. پاسخ‌های سئو سیگنال ۲۰ روز کش می‌شوند؛ اجرای دوباره هزینه سهمیه ندارد.</p>
-			<div class="ost-run" id="ost-run" data-id="<?php echo (int) $id; ?>" data-status="<?php echo esc_attr( $job['status'] ?? '' ); ?>" data-autorun="<?php echo ! empty( $_GET['autorun'] ) ? 1 : 0; // phpcs:ignore ?>">
+			<div class="ost-run" id="ost-run" data-id="<?php echo (int) $id; ?>" data-status="<?php echo esc_attr( $job['status'] ?? '' ); ?>" data-autorun="<?php echo esc_attr( ! empty( $_GET['autorun'] ) ? ( 'resume' === $_GET['autorun'] ? 'resume' : 1 ) : 0 ); // phpcs:ignore ?>">
 				<div class="ost-run-act">
 					<button class="ost-btn primary" data-run="1"><?php echo ost_icon( 'play', 16 ); // phpcs:ignore ?> <?php echo $a ? 'به‌روزرسانی تحلیل' : 'شروع تحلیل'; ?></button>
 					<?php if ( $a ) : ?><button class="ost-btn" data-run="fresh">تحلیل کامل از نو</button><?php endif; ?>
 					<?php if ( in_array( $job['status'] ?? '', array( 'paused', 'running' ), true ) ) : ?><button class="ost-btn amber" data-resume="1">ادامه تحلیل</button><?php endif; ?>
+					<?php if ( 'waiting' === ( $job['status'] ?? '' ) && ! empty( $job['goto'] ) ) : ?><a class="ost-btn amber" href="<?php echo esc_url( $job['goto'] ); ?>">پاسخ دهید و ادامه دهید</a><?php endif; ?>
 					<span class="ost-muted">سهمیه امروز سئو سیگنال: <?php echo esc_html( ost_num( ost_ss_remaining() ) ); ?> · این پروپوزال حداکثر <?php echo esc_html( ost_num( $cost['total'] ) ); ?></span>
 				</div>
 				<?php if ( 'running' === ( $job['status'] ?? '' ) ) : ?><p class="ost-flash is-warn">تحلیل نیمه‌کاره مانده است؛ «ادامه تحلیل» را بزنید تا از همان‌جا ادامه پیدا کند.</p><?php endif; ?>
@@ -137,6 +138,10 @@ $here   = ost_proposal_url( $id, $tab );
 			<section class="ost-panel warn"><h2>مراحلی که داده نگرفتند</h2><ul><?php foreach ( $errs as $s ) { echo '<li><b>' . esc_html( $s['label'] ) . ':</b> ' . esc_html( $s['msg'] ) . '</li>'; } ?></ul><p class="ost-muted">پروپوزال با داده‌های موجود ساخته شده؛ اسلایدهای بدون داده خودکار ساده‌تر می‌شوند.</p></section>
 		<?php endif; ?>
 	<?php endif; ?>
+
+<?php elseif ( 'discovery' === $tab ) : ost_view( 'app/views/tab-discovery', array( 'p' => $p ) ); ?>
+
+<?php elseif ( 'keywords' === $tab ) : ost_view( 'app/views/tab-keywords', array( 'p' => $p, 'a' => $a ) ); ?>
 
 <?php elseif ( 'market' === $tab ) : if ( ! $need() ) : $m = $a['market']; ?>
 	<section class="ost-kpis">

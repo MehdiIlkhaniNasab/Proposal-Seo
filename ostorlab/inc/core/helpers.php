@@ -290,9 +290,12 @@ function ost_jdate( $ts = null ) {
  * Jalali month label N months from now: "آذر ۱۴۰۵".
  */
 function ost_jmonth_from_now( $offset ) {
-	$ts = strtotime( '+' . (int) $offset . ' months', current_time( 'timestamp' ) ); // phpcs:ignore
-	list( $y, $m ) = ost_jalali( (int) gmdate( 'Y', $ts ), (int) gmdate( 'n', $ts ), 15 );
-	return ost_jalali_months()[ $m ] . ' ' . ost_fa( $y );
+	// Counted in Jalali months from today's Jalali month (Gregorian month arithmetic drifts).
+	$ts            = current_time( 'timestamp' ); // phpcs:ignore
+	list( $y, $m ) = ost_jalali( (int) gmdate( 'Y', $ts ), (int) gmdate( 'n', $ts ), (int) gmdate( 'j', $ts ) );
+	$i             = $m - 1 + (int) $offset;
+	$y            += intdiv( $i, 12 );
+	return ost_jalali_months()[ $i % 12 + 1 ] . ' ' . ost_fa( $y );
 }
 
 /**

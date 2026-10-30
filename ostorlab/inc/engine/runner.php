@@ -28,16 +28,17 @@ function ost_job_plan( $p, $fresh = false ) {
 		$prev           = $old[ $key ] ?? array();
 		$steps[ $key ]  = array( 'label' => $label, 'status' => 'done' === ( $prev['status'] ?? '' ) ? 'done' : 'pending', 'msg' => 'done' === ( $prev['status'] ?? '' ) ? ( $prev['msg'] ?? '' ) : '' );
 	};
+	// 1. Know the business first: profile + questions, confirmed by the SEO manager.
+	$add( 'discover', 'شناخت کسب‌وکار: خواندن سایت‌ها و آماده‌کردن سؤال‌ها' );
+	$add( 'gate:discovery', 'تأیید پروفایل کسب‌وکار توسط شما' );
+	if ( ! ost_discovery_confirmed( $p ) ) {
+		$steps['gate:discovery']['status'] = 'pending';
+		if ( 'draft' !== ost_discovery( $p['id'] )['status'] || ost_discovery( $p['id'] )['sig'] !== ost_discovery_sig( $p ) ) {
+			$steps['discover']['status'] = 'pending';
+		}
+	}
 	foreach ( $in['keywords'] as $kw ) {
 		$add( 'kw:' . $kw, 'تحقیق کلمه «' . $kw . '»' );
-	}
-	if ( ost_ai_connected() ) {
-		$add( 'aikw', 'پالایش کلمات و انتخاب کلمات کلیدی اصلی با هوش مصنوعی' );
-		foreach ( $steps as $k => $s ) {
-			if ( 0 === strpos( $k, 'kw:' ) && 'pending' === $s['status'] ) {
-				$steps['aikw']['status'] = 'pending'; // New keyword data: review again.
-			}
-		}
 	}
 	foreach ( ost_domains( $p ) as $d => $role ) {
 		$add( 'site:' . $d, 'کلمات و صفحات ' . $d );
@@ -55,14 +56,26 @@ function ost_job_plan( $p, $fresh = false ) {
 			$add( 'gsc', 'داده سرچ کنسول' );
 		}
 	}
-	$add( 'compute', 'محاسبه بازار، رقبا، هزینه و نقشه راه' );
+	// 2. Keyword review (after the sites, so it knows who ranks for what), then the user's check.
 	if ( ost_ai_connected() ) {
-		$add( 'ai', 'نوشتن متن‌ها با هوش مصنوعی' );
+		$add( 'aikw', 'بازبینی کلمه‌به‌کلمه با هوش مصنوعی (بر اساس پروفایل کسب‌وکار)' );
+		$steps['aikw']['status'] = 'pending'; // Cheap when nothing changed (the review is kept by signature).
+	}
+	$add( 'compute', 'محاسبه بازار، رقبا، هزینه و نقشه راه' );
+	$add( 'gate:keywords', 'تأیید کلمات و حوزه‌ها توسط شما' );
+	if ( ! ost_kw_review_confirmed( $p ) ) {
+		$steps['gate:keywords']['status'] = 'pending';
+	}
+	// 3. Writing, in small parts.
+	if ( ost_ai_connected() ) {
+		foreach ( ost_writer_parts() as $k => $label ) {
+			$add( 'ai:' . $k, 'هوش مصنوعی: ' . $label );
+			if ( $fresh || 'pending' === $steps['gate:keywords']['status'] ) {
+				$steps[ 'ai:' . $k ]['status'] = 'pending';
+			}
+		}
 	}
 	$steps['compute']['status'] = 'pending';
-	if ( isset( $steps['ai'] ) && $fresh ) {
-		$steps['ai']['status'] = 'pending';
-	}
 	$job = array( 'status' => 'running', 'steps' => $steps, 'started' => time(), 'msg' => '' );
 	update_post_meta( $p['id'], '_ost_job', $job );
 	ost_job_status( $p['id'], 'running' );
@@ -129,6 +142,27 @@ function ost_job_tick( $id ) {
 		$res = new WP_Error( 'ost_step_fatal', 'خطای داخلی در این مرحله: ' . mb_substr( $e->getMessage(), 0, 220 ) );
 	}
 	unset( $GLOBALS['ost_running_step'] );
+	if ( is_wp_error( $res ) && 'ost_wait' === $res->get_error_code() ) {
+		// Waiting for the SEO manager (business profile / keyword review): the step stays pending.
+		$job['steps'][ $key ]['status'] = 'pending';
+		$job['steps'][ $key ]['msg']    = 'منتظر تأیید شما';
+		$job['status']                  = 'waiting';
+		$job['msg']                     = $res->get_error_message();
+		$job['goto']                    = $res->get_error_data()['goto'] ?? '';
+		update_post_meta( $id, '_ost_job', $job );
+		ost_job_status( $id, 'waiting' );
+		return $job;
+	}
+	if ( is_array( $res ) && isset( $res['again'] ) ) {
+		// A step done in several ticks (keyword review chunks).
+		$job['steps'][ $key ]['status'] = $res['again'] ? 'pending' : 'done';
+		$job['steps'][ $key ]['msg']    = (string) $res['msg'];
+		$res                            = $res['again'] ? null : (string) $res['msg'];
+		if ( null === $res ) {
+			update_post_meta( $id, '_ost_job', $job );
+			return $job;
+		}
+	}
 	if ( is_wp_error( $res ) && 'ost_ss_cap' === $res->get_error_code() ) {
 		$job['status'] = 'paused';
 		$job['msg']    = $res->get_error_message();
@@ -248,32 +282,30 @@ function ost_job_step( $p, $key ) {
 			}
 			ost_set_data( $id, 'gsc', $r );
 			return sprintf( '%s کلیک در ۳ ماه', ost_num( $r['totals']['clicks'] ) );
+		case 'discover':
+			if ( ost_discovery_confirmed( $p ) ) {
+				return 'از قبل تأیید شده';
+			}
+			return ost_discovery_build( $p );
+		case 'gate':
+			if ( 'discovery' === $arg ) {
+				return ost_discovery_confirmed( $p ) ? 'تأیید شد' : new WP_Error( 'ost_wait', 'به چند سؤال کوتاه درباره کسب‌وکار جواب دهید تا تحلیل کلمات دقیق باشد.', array( 'goto' => ost_proposal_url( $id, 'discovery' ) ) );
+			}
+			return ost_kw_review_confirmed( $p ) ? 'تأیید شد' : new WP_Error( 'ost_wait', 'کلمات و حوزه‌ها آماده بازبینی است؛ بی‌ربط‌ها را کنار بگذارید و تأیید کنید تا پروپوزال نوشته شود.', array( 'goto' => ost_proposal_url( $id, 'keywords' ) ) );
 		case 'aikw':
-			$raw = array();
-			$kw  = ost_data( $id, 'keywords' );
-			foreach ( $p['inputs']['keywords'] as $s ) {
-				if ( isset( $kw[ $s ] ) ) {
-					$raw[ $s ] = $kw[ $s ];
-				}
-			}
-			$rev = ost_ai_keyword_review( $p, $raw );
-			if ( is_wp_error( $rev ) ) {
-				return $rev;
-			}
-			ost_set_data( $id, 'aikw', $rev );
-			return sprintf( '%s کلمه بی‌ربط حذف شد، %s کلمه کلیدی اصلی انتخاب شد', ost_num( count( $rev['drop'] ) ), ost_num( count( $rev['important'] ) ) );
+			return ost_kw_review_step( $p );
 		case 'compute':
 			ost_compute( $id );
 			return 'محاسبه شد';
 		case 'ai':
 			$a = ost_data( $id, 'analysis' );
-			$t = ost_writer_ai( $p, $a );
+			$t = ost_writer_ai( $p, $a, $arg ?: 'all' );
 			if ( is_wp_error( $t ) ) {
 				return $t;
 			}
-			update_post_meta( $id, '_ost_ai_texts', $t );
+			ost_writer_store( $id, $t );
 			ost_compute( $id );
-			return 'متن‌ها نوشته شد';
+			return 'market' === $arg ? 'کانال‌ها و فرصت‌های بازار تحلیل شد' : 'متن‌ها نوشته شد';
 	}
 	return new WP_Error( 'ost_step', 'مرحله نامعتبر' );
 }
@@ -303,7 +335,7 @@ function ost_compute( $id ) {
 		}
 	}
 	$review   = ost_data( $id, 'aikw' );
-	$market   = ost_build_market( $raw, $review );
+	$market   = ost_build_market( $raw, $review, ost_kw_rules( $p ) );
 	$market['ai_note'] = (string) ( $review['note'] ?? '' );
 	$tokens   = ost_market_tokens( $market, $in['keywords'] );
 	$profiles = array();
@@ -340,7 +372,8 @@ function ost_compute( $id ) {
 	$ai_market       = (array) get_post_meta( $id, '_ost_ai_market', true );
 	$a['channels']   = ost_channels( $a, $in, $ai_market );
 	$a['opps_ai']    = ost_market_opportunities( $a, $ai_market );
-	$a['market']['rows'] = array(); // Only needed for the strategy; keeps the stored analysis small.
+	$a['market']['topics'] = ost_kw_topics( $a['market'], ost_kw_evidence( $id ) ); // For the keyword review tab.
+	$a['market']['rows']   = array(); // Only needed for the strategy; keeps the stored analysis small.
 	$months      = (int) $in['months'];
 	$suggest     = ost_budget_suggest( $a, $months );
 	$a['budget'] = ost_budget( $suggest, $months, (array) $p['budget'] );

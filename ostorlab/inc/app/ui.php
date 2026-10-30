@@ -14,6 +14,8 @@ defined( 'ABSPATH' ) || exit;
 function ost_proposal_tabs() {
 	return array(
 		'summary'     => array( 'خلاصه و اجرا', 'play' ),
+		'discovery'   => array( 'شناخت کسب‌وکار', 'user' ),
+		'keywords'    => array( 'بازبینی کلمات', 'grid' ),
 		'market'      => array( 'بازار و کلمات', 'search' ),
 		'competitors' => array( 'رقبا', 'users' ),
 		'strategy'    => array( 'استراتژی شروع', 'target' ),
@@ -34,6 +36,7 @@ function ost_statuses() {
 		'draft'       => array( 'پیش‌نویس', 'gray' ),
 		'running'     => array( 'در حال تحلیل', 'blue' ),
 		'paused'      => array( 'متوقف (سقف روزانه)', 'amber' ),
+		'waiting'     => array( 'منتظر تأیید شما', 'amber' ),
 		'ready'       => array( 'آماده ارسال', 'sky' ),
 		'sent'        => array( 'ارسال‌شده', 'navy' ),
 		'negotiating' => array( 'در حال مذاکره', 'violet' ),

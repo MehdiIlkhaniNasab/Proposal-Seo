@@ -137,6 +137,49 @@ $css = (string) file_get_contents( $assets['css'] ); // phpcs:ignore WordPress.W
 	</div>
 <?php $close(); endif; ?>
 
+<?php
+if ( $on( 'profile' ) ) :
+	$dsc   = ost_discovery( $p['id'] );
+	$qa    = array();
+	foreach ( $dsc['questions'] as $q ) {
+		$v              = ost_discovery_answer( $dsc, $q );
+		$qa[ $q['id'] ] = is_array( $v ) ? implode( '، ', $v ) : trim( (string) $v );
+	}
+	$sells = array_slice( ost_discovery_lines( $qa['sells'] ?? '' ), 0, 10 );
+	$excl  = array_slice( ost_discovery_excluded( $p['id'] ), 0, 8 );
+	$fl    = (array) ( $m['filtered'] ?? array() );
+	$gone  = (int) ( $fl['user'] ?? 0 ) + (int) ( $fl['ai'] ?? 0 ) + (int) ( $fl['irrelevant'] ?? 0 ) + (int) ( $fl['evidence'] ?? 0 );
+	$facts = array_filter( array( 'مدل فروش' => $qa['model'] ?? '', 'محدوده' => $qa['geo'] ?? '', 'رده قیمت' => $qa['price'] ?? '', 'مشتری‌ها امروز از' => $qa['channels'] ?? '' ) );
+	foreach ( $dsc['questions'] as $q ) { // Niche-specific answers (material, audience…).
+		if ( empty( $q['fixed'] ) && '' !== ( $qa[ $q['id'] ] ?? '' ) && count( $facts ) < 6 ) {
+			$facts[ rtrim( $q['q'], '؟?' ) ] = $qa[ $q['id'] ];
+		}
+	}
+	$close = $open( 'شناخت کسب‌وکار', 'کسب‌وکار شما را این‌طور شناختیم', 'همه کلمات، عددها و پیشنهادهای این پروپوزال بر پایه همین شناخت ساخته شده؛ نه کلمات کلی یک ابزار.' );
+	?>
+	<div class="grid g-prof">
+		<div class="card prof-main">
+			<span class="prof-tag">آنچه ارائه می‌دهید</span>
+			<?php if ( ! empty( $dsc['profile']['summary'] ) ) : ?><p class="prof-sum"><?php echo esc_html( $dsc['profile']['summary'] ); ?></p><?php endif; ?>
+			<?php if ( $sells ) : ?><div class="prof-chips big"><?php foreach ( $sells as $x ) { echo '<i>' . esc_html( $x ) . '</i>'; } ?></div><?php endif; ?>
+			<?php if ( ! empty( $dsc['profile']['audience'] ) ) : ?><p class="prof-aud"><span>مشتری شما</span> <?php echo esc_html( $dsc['profile']['audience'] ); ?></p><?php endif; ?>
+			<?php if ( ! empty( $qa['focus'] ) ) : ?><div class="prof-focus"><span>محور رشد و سود</span><b><?php echo esc_html( $qa['focus'] ); ?></b></div><?php endif; ?>
+		</div>
+		<div class="prof-side">
+			<div class="prof-facts">
+				<?php foreach ( $facts as $l => $v ) : ?><div><span><?php echo esc_html( $l ); ?></span><b><?php echo esc_html( $v ); ?></b></div><?php endforeach; ?>
+			</div>
+			<?php if ( $excl || $gone ) : ?>
+				<div class="prof-excl">
+					<h4>آگاهانه کنار گذاشتیم</h4>
+					<?php if ( $excl ) : ?><div class="prof-chips muted"><?php foreach ( $excl as $x ) { echo '<i>' . esc_html( $x ) . '</i>'; } ?></div><?php endif; ?>
+					<?php if ( $gone ) : ?><p><b><?php echo esc_html( ost_num( $gone ) ); ?> کلمه</b> هم‌لفظ ولی بی‌ربط با کسب‌وکار شما از تحلیل حذف شد تا عددهای بازار واقعی باشند.</p><?php endif; ?>
+				</div>
+			<?php endif; ?>
+		</div>
+	</div>
+<?php $close(); endif; ?>
+
 <?php if ( $on( 'div_market' ) ) { $divider( $section['market'], 'بازار و رقبا', 'مشتریان شما در گوگل چه می‌جویند و امروز چه کسی آن‌ها را می‌گیرد' ); } ?>
 
 <?php if ( $on( 'market' ) ) : $close = $open( $section['market'] . ' · بازار جستجو', 'تقاضای آنلاین حوزه شما', $t['market'] ?? '' ); ?>
@@ -640,6 +683,44 @@ if ( $on( 'opps' ) ) :
 				<div class="d"><small><?php echo esc_html( $st['when'] ); ?></small><b><?php echo esc_html( $st['title'] ); ?></b><ul><?php foreach ( $st['items'] as $it ) { echo '<li>' . esc_html( $it ) . '</li>'; } ?></ul></div>
 			<?php endforeach; ?>
 			<div class="d90-res"><span>پایان ۹۰ روز</span><b><?php echo esc_html( ost_num( $sg['day90'][0] ) . ' تا ' . ost_num( $sg['day90'][1] ) ); ?></b><small>کلیک ماهانه تازه از همین فرصت‌ها<?php echo $sg['revenue']['high'] > 0 ? ' · پس از تثبیت حدود ' . esc_html( ost_compact( $sg['revenue']['low'] ) . ' تا ' . ost_compact( $sg['revenue']['high'] ) ) . ' تومان فروش ماهانه' : ''; ?></small></div>
+		</div>
+	</div>
+<?php $close(); endif; ?>
+
+<?php
+if ( $on( 'astrolabe' ) ) :
+	$miles = array();
+	foreach ( array_slice( (array) ( $sg['picks'] ?? array() ), 0, 5 ) as $i => $o ) {
+		$miles[] = array( 'n' => $i + 1, 'month' => (int) $o['months'][0], 'label' => $o['label'], 'to' => (int) $o['months'][1] );
+	}
+	$close = $open( $section['plan'] . ' · اسطرلاب', 'اسطرلاب مسیر رشد: ' . ost_num( $months ) . ' ماه در یک نگاه', '', 's-astro' );
+	?>
+	<div class="grid g-astro">
+		<div class="astro-wrap">
+			<?php
+			echo ost_chart_astrolabe( $months, $a['roadmap'], $miles, $f['curve']['mid'] ?? array(), array( // phpcs:ignore
+				'label' => 'کلیک غیربرندی ماهانه',
+				'value' => ost_num( $f['scenarios']['low'] ) . ' تا ' . ost_num( $f['scenarios']['high'] ),
+				'sub'   => 'در پایان ماه ' . ost_num( $months ),
+			), 476 );
+			?>
+		</div>
+		<div class="astro-legend">
+			<h3>پنج مرحله، از بیرون به درون زمان</h3>
+			<ol class="astro-ph">
+				<?php foreach ( array_values( $a['roadmap'] ) as $i => $ph ) : ?>
+					<li><i class="ph<?php echo (int) $i; ?>"><?php echo esc_html( ost_num( $i + 1 ) ); ?></i><div><b><?php echo esc_html( $ph['title'] ); ?></b><small><?php echo esc_html( $ph['label'] . ' · ' . $ph['result'] ); ?></small></div></li>
+				<?php endforeach; ?>
+			</ol>
+			<?php if ( $miles ) : ?>
+				<h3>نقاط برد: اولین نتیجه فرصت‌های شروع</h3>
+				<ul class="astro-ms">
+					<?php foreach ( $miles as $ms ) : ?>
+						<li><i><?php echo esc_html( ost_num( $ms['n'] ) ); ?></i><b>«<?php echo esc_html( $ms['label'] ); ?>»</b><small>ماه <?php echo esc_html( ost_num( $ms['month'] ) . ' تا ' . ost_num( $ms['to'] ) ); ?></small></li>
+					<?php endforeach; ?>
+				</ul>
+			<?php endif; ?>
+			<p class="note">حلقه بیرونی: ماه‌ها از امروز · حلقه آبی: مراحل · نقطه‌های نارنجی: نقاط برد (با هاله: اولین برد سریع) · حلقه سبزآبی: کلیک ماهانه مورد انتظار، پررنگ‌تر یعنی بیشتر.</p>
 		</div>
 	</div>
 <?php $close(); endif; ?>

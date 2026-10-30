@@ -78,6 +78,13 @@ $test = function ( $svc ) {
 		</div>
 		<?php $test( 'ai' ); ?>
 		<p class="ost-muted">مصرف این ماه اسطرلاب: <?php echo esc_html( ost_num( ost_ai_usage()['cost'], 2 ) ); ?> دلار · <?php echo ost_ai_via_sokan() ? 'درخواست‌ها از طریق سکان ارسال می‌شود.' : ''; ?></p>
+		<?php $lf = ost_ai_last_failure(); if ( $lf ) : ?>
+			<details class="ost-help"><summary>آخرین خطای هوش مصنوعی (<?php echo esc_html( ost_ago( $lf['at'] ) ); ?>)</summary>
+				<p><b><?php echo esc_html( $lf['msg'] ); ?></b></p>
+				<p class="ost-muted">اسطرلاب در این حالت پاسخ را خودکار ترمیم و در صورت نیاز یک بار با متن کوتاه‌تر دوباره درخواست می‌کند. اگر این خطا مدام تکرار شود، مدل دیگری را امتحان کنید یا سقف خروجی مدل در درگاه را بررسی کنید.</p>
+				<?php if ( $lf['raw'] ) : ?><pre dir="auto" class="ost-raw"><?php echo esc_html( $lf['raw'] ); ?></pre><?php endif; ?>
+			</details>
+		<?php endif; ?>
 	</section>
 	<section class="ost-panel">
 		<h2>سمراش <small class="ost-muted">بک‌لینک، دامنه ارجاع‌دهنده، انکر، لینک صفحات پرفروش</small></h2>

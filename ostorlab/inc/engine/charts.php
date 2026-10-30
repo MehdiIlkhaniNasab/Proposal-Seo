@@ -270,3 +270,108 @@ function ost_chart_matrix( $all, $picks, $w = 640, $h = 470 ) {
 	}
 	return $svg . '</svg>';
 }
+
+/**
+ * The signature roadmap: an astrolabe. Outer scale = the months of the period (Jalali
+ * names), phase ring = the five phases (one blue hue, light → dark as the work matures,
+ * each numbered), milestone ring = when each entry opportunity is expected to give its
+ * first result, inner ring = expected monthly clicks (one teal hue, darker = more), and
+ * the rule (alidade) points at the first quick win. Centre: clicks at the end of the period.
+ *
+ * @param array $phases     ost_roadmap() phases.
+ * @param array $milestones [ ['n' => 1, 'month' => int, 'label' => string] ].
+ * @param array $curve      Monthly clicks (index 0..months).
+ * @param array $center     ['value' => string, 'label' => string, 'sub' => string].
+ */
+function ost_chart_astrolabe( $months, $phases, $milestones, $curve, $center, $size = 500 ) {
+	$c     = ost_chart_colors();
+	$cx    = $size / 2;
+	$cy    = $size / 2;
+	$ramp  = array( '#5DB3EC', '#2E8FDB', '#1570C2', '#0B529A', '#0A3566' );
+	$teal  = '#0F9F8F';
+	$amber = '#D97706';
+	$months = max( 1, (int) $months );
+	$ang   = function ( $m ) use ( $months ) { // Month boundary (0..months) → radians, clockwise from the top.
+		return -M_PI / 2 + 2 * M_PI * $m / $months;
+	};
+	$pt    = function ( $r, $a ) use ( $cx, $cy ) {
+		return array( round( $cx + $r * cos( $a ), 2 ), round( $cy + $r * sin( $a ), 2 ) );
+	};
+	$arc   = function ( $r1, $r2, $a1, $a2 ) use ( $pt ) {
+		$large = ( $a2 - $a1 ) > M_PI ? 1 : 0;
+		list( $x1, $y1 ) = $pt( $r2, $a1 );
+		list( $x2, $y2 ) = $pt( $r2, $a2 );
+		list( $x3, $y3 ) = $pt( $r1, $a2 );
+		list( $x4, $y4 ) = $pt( $r1, $a1 );
+		return sprintf( 'M%s %s A%s %s 0 %d 1 %s %s L%s %s A%s %s 0 %d 0 %s %s Z', $x1, $y1, $r2, $r2, $large, $x2, $y2, $x3, $y3, $r1, $r1, $large, $x4, $y4 );
+	};
+	$s  = sprintf( '<svg class="ost-astro" viewBox="0 0 %1$d %1$d" width="%1$d" height="%1$d" role="img" aria-label="نقشه راه %2$s ماهه">', $size, esc_attr( ost_fa( $months ) ) );
+	$s .= sprintf( '<defs><radialGradient id="astro-bg" cx="50%%" cy="50%%" r="50%%"><stop offset="0" stop-color="#F3F9FF"/><stop offset="1" stop-color="#E6F4FD"/></radialGradient></defs><circle cx="%1$s" cy="%1$s" r="%2$s" fill="url(#astro-bg)" stroke="%3$s" stroke-width="1.5"/>', $cx, $size / 2 - 4, $c['grid'] );
+	// Outer scale: one tick per month, every month named.
+	$r_out = $size / 2 - 8;
+	for ( $m = 0; $m < $months; $m++ ) {
+		list( $x1, $y1 ) = $pt( $r_out, $ang( $m ) );
+		list( $x2, $y2 ) = $pt( $r_out - 12, $ang( $m ) );
+		$s .= sprintf( '<line x1="%s" y1="%s" x2="%s" y2="%s" stroke="%s" stroke-width="1.5"/>', $x1, $y1, $x2, $y2, $c['muted'] );
+		$mid             = $ang( $m + 0.5 );
+		list( $tx, $ty ) = $pt( $r_out - 24, $mid );
+		$name            = explode( ' ', ost_jmonth_from_now( $m ) )[0];
+		$s .= ost_svg_text( $tx, $ty + 4, $name, 'text-anchor="middle" font-size="11" font-weight="700" fill="' . $c['ink2'] . '"' );
+	}
+	// Phase ring.
+	$r1 = $size / 2 - 104;
+	$r2 = $size / 2 - 52;
+	foreach ( array_values( $phases ) as $i => $ph ) {
+		$a1   = $ang( $ph['from'] - 1 ) + 0.012;
+		$a2   = $ang( $ph['to'] ) - 0.012;
+		$fill = $ramp[ min( $i, 4 ) ];
+		$s   .= sprintf( '<path d="%s" fill="%s"/>', $arc( $r1, $r2, $a1, $a2 ), $fill );
+		list( $tx, $ty ) = $pt( ( $r1 + $r2 ) / 2, ( $a1 + $a2 ) / 2 );
+		$s .= sprintf( '<circle cx="%s" cy="%s" r="13" fill="#fff" fill-opacity="%s"/>', $tx, $ty, 0 === $i ? '0.9' : '0.18' );
+		$s .= ost_svg_text( $tx, $ty + 5, ost_fa( $i + 1 ), 'text-anchor="middle" font-size="15" font-weight="900" fill="' . ( 0 === $i ? $c['ink'] : '#fff' ) . '"' );
+	}
+	// Inner ring: expected monthly clicks (darker = more).
+	$r3  = $r1 - 30;
+	$r4  = $r1 - 54;
+	$max = max( 1, max( array_map( 'intval', (array) $curve ) ) );
+	for ( $m = 1; $m <= $months; $m++ ) {
+		$v   = (int) ( $curve[ $m ] ?? 0 );
+		$s  .= sprintf( '<path d="%s" fill="%s" fill-opacity="%s"/>', $arc( $r4, $r3, $ang( $m - 1 ) + 0.01, $ang( $m ) - 0.01 ), $teal, round( 0.12 + 0.88 * $v / $max, 2 ) );
+	}
+	// Milestones: first result of each entry opportunity; several in one month share its
+	// span, alternating between two radii so they never overlap.
+	$month_of = function ( $ms ) use ( $months ) {
+		return max( 1, min( $months, (int) $ms['month'] ) );
+	};
+	$count = array_count_values( array_map( $month_of, $milestones ) );
+	$s    .= '<!--rule-->';
+	$seen  = array();
+	$first = null;
+	foreach ( $milestones as $ms ) {
+		$mm          = $month_of( $ms );
+		$k           = $seen[ $mm ] ?? 0;
+		$seen[ $mm ] = $k + 1;
+		$a           = $ang( $mm - 1 + ( $k + 0.5 ) / $count[ $mm ] );
+		$r           = ( $r3 + $r1 ) / 2 + ( $count[ $mm ] > 1 ? ( 0 === $k % 2 ? 7 : -7 ) : 0 );
+		list( $x, $y ) = $pt( $r, $a );
+		if ( null === $first ) { // The first quick win gets a halo.
+			$first = array( $x, $y, $a );
+			$s    .= sprintf( '<circle cx="%s" cy="%s" r="15" fill="%s" fill-opacity=".22"/>', $x, $y, $amber );
+		}
+		$s .= sprintf( '<circle cx="%s" cy="%s" r="8.5" fill="%s" stroke="#fff" stroke-width="2"/>', $x, $y, $amber );
+		$s .= ost_svg_text( $x, $y + 4, ost_fa( $ms['n'] ), 'text-anchor="middle" font-size="10.5" font-weight="900" fill="#fff"' );
+	}
+	// The rule (alidade) through the centre, pointing at the first quick win.
+	if ( $first ) {
+		list( $x2, $y2 ) = $pt( $r4 - 12, $first[2] + M_PI );
+		$s = str_replace( '<!--rule-->', sprintf( '<line x1="%s" y1="%s" x2="%s" y2="%s" stroke="%s" stroke-width="2" stroke-opacity=".45" stroke-dasharray="2 5" stroke-linecap="round"/>', $first[0], $first[1], $x2, $y2, $amber ), $s );
+	}
+	// Centre.
+	$rc  = $r4 - 12;
+	$s  .= sprintf( '<circle cx="%1$s" cy="%2$s" r="%3$s" fill="%4$s"/><circle cx="%1$s" cy="%2$s" r="%5$s" fill="none" stroke="#7DD3FC" stroke-opacity=".5" stroke-width="1"/>', $cx, $cy, $rc, $c['ink'], $rc - 7 );
+	$rtl = 'direction="rtl" unicode-bidi="embed" ';
+	$s  .= ost_svg_text( $cx, $cy - 22, $center['label'], $rtl . 'text-anchor="middle" font-size="12" font-weight="700" fill="#BFDBFE"' );
+	$s  .= ost_svg_text( $cx, $cy + 10, $center['value'], $rtl . 'text-anchor="middle" font-size="' . ( mb_strlen( $center['value'] ) > 12 ? 20 : 26 ) . '" font-weight="900" fill="#fff"' );
+	$s  .= ost_svg_text( $cx, $cy + 34, $center['sub'], $rtl . 'text-anchor="middle" font-size="11.5" fill="#BFDBFE"' );
+	return $s . '</svg>';
+}

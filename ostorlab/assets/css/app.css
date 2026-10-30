@@ -371,3 +371,27 @@ body.ost-auth { min-height: 100vh; display: grid; place-items: center; backgroun
 .ost-stack { display: flex; height: 34px; border-radius: 10px; overflow: hidden; gap: 2px; margin: 6px 0 14px; }
 .ost-stack i { display: grid; place-items: center; color: #fff; font-style: normal; font-weight: 800; font-size: 12px; min-width: 0; overflow: hidden; }
 .ost-dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; vertical-align: middle; }
+.ost-raw { max-height: 220px; overflow: auto; background: #0A2540; color: #E0F2FE; padding: 10px 12px; border-radius: 10px; font-size: 12px; white-space: pre-wrap; }
+
+/* Business discovery. */
+.ost-disc-profile textarea { width: 100%; }
+.ost-field { display: flex; flex-direction: column; gap: 6px; font-weight: 700; margin: 10px 0; }
+.ost-field textarea { font-weight: 400; }
+.ost-chip { display: inline-block; padding: 2px 10px; border-radius: 99px; background: #EEF5FC; font-size: 12px; margin: 2px; }
+.ost-qs { list-style: none; margin: 0; padding: 0; counter-reset: q; display: flex; flex-direction: column; gap: 12px; }
+.ost-q { counter-increment: q; border: 1px solid #E2E8F0; border-radius: 14px; padding: 14px 16px; }
+.ost-q-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-bottom: 10px; }
+.ost-q-head b::before { content: counter(q, persian) ". "; color: #0D94E4; }
+.ost-q-head small { flex-basis: 100%; color: #64748B; }
+.ost-q textarea { width: 100%; }
+.ost-opts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.ost-opt { position: relative; cursor: pointer; }
+.ost-opt input { position: absolute; opacity: 0; }
+.ost-opt span { display: inline-block; padding: 6px 14px; border-radius: 99px; border: 1px solid #CBD5E1; background: #fff; font-size: 13px; }
+.ost-opt input:checked + span { background: #0B4F9C; border-color: #0B4F9C; color: #fff; }
+.ost-opt input:focus-visible + span { outline: 2px solid #0D94E4; outline-offset: 2px; }
+.ost-other { min-width: 180px; flex: 1; max-width: 320px; }
+/* Keyword review. */
+.ost-scroll { max-height: 560px; overflow: auto; }
+.ost-kwrev tr.is-key td { background: #F0F7FF; }
+.ost-check { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; }

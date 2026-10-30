@@ -67,6 +67,8 @@ function ost_writer_facts( $p, $a ) {
 		$clusters[] = array( 'cluster' => $c['seed'], 'monthly_searches' => $c['total'], 'buyer_searches' => $c['buyer'], 'trend_pct' => $c['change'], 'top' => array_slice( array_column( $c['top'], 'w' ), 0, 5 ) );
 	}
 	return array(
+		'business_profile' => ost_discovery_profile_brief( $p['id'] ),
+		'business_answers' => ost_discovery_qa( $p['id'] ),
 		'client'       => $in['client_name'],
 		'business'     => ost_business_types()[ $in['business_type'] ] ?? '',
 		'industry'     => $in['industry'],
@@ -102,93 +104,142 @@ function ost_writer_facts( $p, $a ) {
 }
 
 /**
- * Generate texts with the AI.
- *
- * @return array|WP_Error
+ * Parts of the AI writing: each is its own, smaller request (a single huge answer was
+ * the main reason replies were cut off and unreadable).
  */
-function ost_writer_ai( $p, $a ) {
-	$list   = array( 'type' => 'array', 'items' => array( 'type' => 'string' ) );
-	$schema = array(
-		'type'       => 'object',
-		'properties' => array(
-			'headline'          => array( 'type' => 'string' ),
-			'executive_summary' => array( 'type' => 'string' ),
-			'strategy'          => array( 'type' => 'string' ),
-			'market'            => array( 'type' => 'string' ),
-			'current_state'     => array( 'type' => 'string' ),
-			'competitors'       => array( 'type' => 'string' ),
-			'offpage'           => array( 'type' => 'string' ),
-			'technical'         => array( 'type' => 'string' ),
-			'content'           => array( 'type' => 'string' ),
-			'strengths'         => $list,
-			'weaknesses'        => $list,
-			'opportunities'     => $list,
-			'threats'           => $list,
-			'next_steps'        => $list,
-			'channels'          => array(
-				'type'       => 'object',
-				'properties' => array_fill_keys( array( 'google', 'instagram', 'marketplaces', 'offline', 'other' ), array( 'type' => 'object', 'properties' => array( 'share' => array( 'type' => 'number' ), 'why' => array( 'type' => 'string' ) ), 'required' => array( 'share', 'why' ) ) ),
-				'required'   => array( 'google', 'instagram', 'marketplaces', 'offline', 'other' ),
-			),
-			'channels_note'        => array( 'type' => 'string' ),
-			'main_recommendation'  => array( 'type' => 'object', 'properties' => array( 'title' => array( 'type' => 'string' ), 'text' => array( 'type' => 'string' ) ), 'required' => array( 'title', 'text' ) ),
-			'market_opportunities' => array(
-				'type'  => 'array',
-				'items' => array(
+function ost_writer_parts() {
+	return array(
+		'market' => 'تحلیل کانال‌های تقاضا، پیشنهاد اصلی و فرصت‌های بازار',
+		'texts'  => 'متن‌های پروپوزال (خلاصه اجرایی، استراتژی، بخش‌ها)',
+		'swot'   => 'نقاط قوت، ضعف، فرصت، تهدید و قدم‌های بعدی',
+	);
+}
+
+/**
+ * Generate one part with the AI ('all' = every part, one after the other).
+ *
+ * @return array|WP_Error Texts of the part (the market part is stored in _ost_ai_market and returns []).
+ */
+function ost_writer_ai( $p, $a, $part = 'all' ) {
+	if ( 'all' === $part ) {
+		$out = array();
+		foreach ( array_keys( ost_writer_parts() ) as $k ) {
+			$r = ost_writer_ai( $p, $a, $k );
+			if ( is_wp_error( $r ) ) {
+				return $r;
+			}
+			$out = array_merge( $out, $r );
+		}
+		return $out;
+	}
+	$list = array( 'type' => 'array', 'items' => array( 'type' => 'string' ) );
+	$str  = array( 'type' => 'string' );
+	$common = array(
+		'تو مدیر سئوی ارشد یک آژانس دیجیتال مارکتینگ ایرانی هستی و بخشی از یک پروپوزال سئو را برای صاحب یک کسب‌وکار ایرانی می‌نویسی.',
+		'business_profile و business_answers شناخت تأییدشده ما از این کسب‌وکار است (چه می‌فروشد، چه نمی‌فروشد، مخاطب، قیمت، منطقه)؛ همه تحلیل‌ها باید با آن سازگار باشد و درباره محصولی که نمی‌فروشد حرفی نزن.',
+		'قواعد:',
+		'- فارسی ساده، روان و محترمانه؛ جمله‌های کوتاه. لازم نیست توضیح بدهی سئو چیست.',
+		'- همه ادعاها با عدد از داده‌ها؛ عددها گرد و با ارقام فارسی («حدود ۱۲ هزار جستجو در ماه»).',
+		'- هرگز رتبه، کلیک یا فروش تضمینی وعده نده؛ پیش‌بینی‌ها با «حدود» و بازه.',
+		'- درباره داده‌ای که صفر است یا وجود ندارد (null) اصلاً صحبت نکن.',
+		'- فقط از کلمات key_keywords و opportunities استفاده کن؛ کلمه‌ای از خودت نساز.',
+		'- خروجی فقط JSON معتبر؛ داخل رشته‌ها خط جدید خام نگذار (برای پاراگراف از \n استفاده کن).',
+	);
+	if ( 'market' === $part ) {
+		$schema = array(
+			'type'       => 'object',
+			'properties' => array(
+				'channels'             => array(
 					'type'       => 'object',
-					'properties' => array( 'title' => array( 'type' => 'string' ), 'keywords' => $list, 'angle' => array( 'type' => 'string' ), 'why' => array( 'type' => 'string' ), 'potential' => array( 'type' => 'string' ) ),
-					'required'   => array( 'title', 'keywords', 'angle', 'why', 'potential' ),
+					'properties' => array_fill_keys( array( 'google', 'instagram', 'marketplaces', 'offline', 'other' ), array( 'type' => 'object', 'properties' => array( 'share' => array( 'type' => 'number' ), 'why' => $str ), 'required' => array( 'share', 'why' ) ) ),
+					'required'   => array( 'google', 'instagram', 'marketplaces', 'offline', 'other' ),
+				),
+				'channels_note'        => $str,
+				'main_recommendation'  => array( 'type' => 'object', 'properties' => array( 'title' => $str, 'text' => $str ), 'required' => array( 'title', 'text' ) ),
+				'market_opportunities' => array(
+					'type'  => 'array',
+					'items' => array(
+						'type'       => 'object',
+						'properties' => array( 'title' => $str, 'keywords' => $list, 'angle' => $str, 'why' => $str, 'potential' => $str ),
+						'required'   => array( 'title', 'keywords', 'angle', 'why', 'potential' ),
+					),
 				),
 			),
-		),
-		'required'   => array( 'headline', 'executive_summary', 'strategy', 'channels', 'channels_note', 'main_recommendation', 'market_opportunities', 'market', 'current_state', 'competitors', 'offpage', 'technical', 'content', 'strengths', 'weaknesses', 'opportunities', 'threats', 'next_steps' ),
-	);
-	$system = implode( "\n", array(
-		'تو مدیر سئوی ارشد یک آژانس دیجیتال مارکتینگ ایرانی هستی و متن یک پروپوزال سئو را برای صاحب یک کسب‌وکار ایرانی می‌نویسی.',
-		'قواعد:',
-		'- فارسی ساده، روان و محترمانه؛ مثل یک مشاور باتجربه که رودررو توضیح می‌دهد. جمله‌های کوتاه. اصطلاح انگلیسی فقط اگر لازم است و با توضیح کوتاه.',
-		'- لازم نیست توضیح بدهی سئو چیست؛ کارفرما می‌داند. مستقیم برو سر وضعیت او، رقبا و پول.',
-		'- همه ادعاها با عدد از داده‌ها. عددها را گرد کن (مثلاً «حدود ۱۲ هزار جستجو در ماه»). از اعداد فارسی استفاده کن.',
-		'- روی کلماتی که فروش و مشتری می‌آورند تأکید کن، نه بازدید آموزشی بی‌ارزش.',
-		'- هرگز رتبه، کلیک یا فروش تضمینی وعده نده. بگو «تعهد ما انجام دقیق کارهاست» و پیش‌بینی‌ها را با «حدود» و بازه بیان کن.',
-		'- برآوردهای ترافیک و درآمد رقبا تخمینی‌اند؛ این را یک‌بار و کوتاه بگو.',
-		'- هر متن بخش ۲ تا ۴ جمله؛ خلاصه اجرایی دو پاراگراف کوتاه: (۱) وضعیت فعلی و چالش اصلی، (۲) راهکار، زمان و نتیجه واقع‌بینانه.',
-		'- تیتر جلد یک جمله الهام‌بخش و دقیق درباره فرصت رشد این کسب‌وکار (حداکثر ۱۲ کلمه).',
-		'- نقاط قوت/ضعف/فرصت/تهدید هر کدام ۳ تا ۴ مورد کوتاه (حداکثر ۱۲ کلمه)، مشخص و مبتنی بر داده.',
-		'- قدم‌های بعدی ۳ مورد عملی (مثل جلسه مرور، دسترسی‌ها، شروع ماه اول).',
-		'- متن «strategy» قلب پروپوزال است: استراتژی شروع (entry_strategy) را طوری توضیح بده که کارفرما حس کند یک نقطه ورود هوشمندانه و مخصوص کسب‌وکار خودش پیدا شده؛ با نام دقیق ۲ تا ۳ فرصت اول، چرایی (تقاضا، رقیب ضعیف یا غایب، جایگاه فعلی خودش)، زمان نتیجه و کلیک قابل انتظار ۹۰ روز اول. لحن مطمئن ولی بدون وعده قطعی.',
-		'- در خلاصه اجرایی هم یک جمله به استراتژی شروع اشاره کن.',
-		'- اگر سایت ندارد، به‌جای ضعف سایت، از «شروع درست از صفر» و فرصت معماری صحیح بگو.',
-		'- درباره داده‌ای که صفر است یا وجود ندارد (null) اصلاً صحبت نکن؛ نه در متن‌ها و نه در نقاط قوت و ضعف.',
-		'- فقط از کلمات key_keywords و opportunities استفاده کن؛ کلمه‌ای از خودت نساز.',
-		'- channels: سهم تقاضای این نوع کسب‌وکار در ایران در هر کانال را واقع‌بینانه تخمین بزن (share به درصد، جمع ۱۰۰): google (جستجوی گوگل)، instagram (اینستاگرام و شبکه‌های اجتماعی)، marketplaces (دیجی‌کالا، ترب، باسلام و…)، offline (حضوری، معرفی، تماس)، other. برای هرکدام why یک جمله کوتاه. channels_note یک جمله که بگوید این‌ها تخمین هستند و پایه آن جستجوی گوگل است.',
-		'- market_opportunities: ۳ تا ۵ فرصت بازار را از بین opportunities و key_keywords حرفه‌ای تحلیل کن. هرکدام: title (نام فرصت)، keywords (۲ تا ۴ کلمه از همان داده)، angle یکی از «کم‌رقابت»، «زودبازده»، «سودآور»، «شکاف رقبا»، «جایگاه فعلی شما»، why (۲ جمله با عدد: تقاضا، وضعیت رقبا، جایگاه کارفرما)، potential (نتیجه قابل انتظار با بازه و زمان).',
-		'- main_recommendation: پیشنهاد اصلی و هوشمندانه تو برای شروع (title کوتاه و جذاب، text سه تا چهار جمله با دلیل‌های داده‌محور) که کارفرما حس کند مخصوص کسب‌وکار خودش است.',
-	) );
-	$user = "داده‌های تحلیل (JSON):\n" . wp_json_encode( ost_writer_facts( $p, $a ), JSON_UNESCAPED_UNICODE );
-	$res  = ost_ai_request( $system, $user, $schema, 'analysis', 10000 );
+			'required'   => array( 'channels', 'channels_note', 'main_recommendation', 'market_opportunities' ),
+		);
+		$rules = array(
+			'- channels: سهم تقاضای همین کسب‌وکار (با همان محصولات، قیمت و منطقه) در ایران در هر کانال را واقع‌بینانه تخمین بزن (share به درصد، جمع ۱۰۰): google، instagram (اینستاگرام و شبکه‌های اجتماعی)، marketplaces (دیجی‌کالا، ترب، باسلام…)، offline (حضوری، معرفی، تماس)، other. اگر کارفرما گفته مشتری‌هایش الان از کجا می‌آیند، آن را هم در نظر بگیر. why یک جمله کوتاه. channels_note یک جمله: این‌ها تخمین‌اند و پایه‌شان جستجوی واقعی گوگل است.',
+			'- market_opportunities: ۳ تا ۵ فرصت بازار از بین opportunities و key_keywords، حرفه‌ای و از زاویه‌های مختلف. هرکدام: title، keywords (۲ تا ۴ کلمه از همان داده)، angle یکی از «کم‌رقابت»، «زودبازده»، «سودآور»، «شکاف رقبا»، «جایگاه فعلی شما»؛ why دو جمله با عدد (تقاضا، وضعیت رقبا، جایگاه کارفرما)، potential نتیجه قابل انتظار با بازه و زمان. فرصت سودآور را با محصولات پرسود کارفرما هماهنگ کن.',
+			'- main_recommendation: پیشنهاد اصلی و هوشمندانه تو برای شروع؛ title کوتاه و جذاب، text سه تا چهار جمله با دلیل داده‌محور، طوری که کارفرما حس کند مخصوص کسب‌وکار خودش است.',
+		);
+		$max = 5000;
+	} elseif ( 'texts' === $part ) {
+		$keys   = array( 'headline', 'executive_summary', 'strategy', 'market', 'current_state', 'competitors', 'offpage', 'technical', 'content' );
+		$schema = array( 'type' => 'object', 'properties' => array_fill_keys( $keys, $str ), 'required' => $keys );
+		$rules  = array(
+			'- هر متن بخش ۲ تا ۴ جمله؛ خلاصه اجرایی دو پاراگراف کوتاه: (۱) وضعیت فعلی و چالش اصلی، (۲) راهکار، زمان و نتیجه واقع‌بینانه؛ یک جمله هم به استراتژی شروع اشاره کند.',
+			'- تیتر جلد یک جمله الهام‌بخش و دقیق درباره فرصت رشد همین کسب‌وکار (حداکثر ۱۲ کلمه).',
+			'- «strategy» قلب پروپوزال است: استراتژی شروع (entry_strategy) و پیشنهاد اصلی (main_recommendation) را طوری توضیح بده که کارفرما حس کند نقطه ورود هوشمندانه و مخصوص کسب‌وکار خودش پیدا شده؛ با نام ۲ تا ۳ فرصت اول، چرایی، زمان نتیجه و کلیک قابل انتظار ۹۰ روز اول.',
+			'- «market» از کانال‌های تقاضا (channels) هم یک جمله بگوید.',
+			'- اگر سایت ندارد، از «شروع درست از صفر» بگو؛ برآوردهای رقبا تخمینی‌اند (یک بار و کوتاه).',
+			'- اگر داده‌ای برای یک بخش نیست (مثلاً offpage یا technical همه null)، آن متن را خالی ("") برگردان.',
+		);
+		$max = 6000;
+	} else {
+		$keys   = array( 'strengths', 'weaknesses', 'opportunities', 'threats', 'next_steps' );
+		$schema = array( 'type' => 'object', 'properties' => array_fill_keys( $keys, $list ), 'required' => $keys );
+		$rules  = array(
+			'- نقاط قوت/ضعف/فرصت/تهدید هر کدام ۳ تا ۴ مورد کوتاه (حداکثر ۱۲ کلمه)، مشخص، مبتنی بر داده و مخصوص همین کسب‌وکار.',
+			'- قدم‌های بعدی ۳ مورد عملی (جلسه مرور، دسترسی‌ها، شروع ماه اول).',
+		);
+		$max = 3000;
+	}
+	$facts = ost_writer_facts( $p, $a );
+	if ( 'market' !== $part ) {
+		$facts['channels']            = array_map( function ( $c ) {
+			return round( 100 * $c['share'] );
+		}, (array) ( $a['channels']['channels'] ?? array() ) );
+		$facts['main_recommendation'] = $a['opps_ai']['main'] ?? null;
+	}
+	$res = ost_ai_request( implode( "\n", array_merge( $common, $rules ) ), "داده‌های تحلیل (JSON):\n" . wp_json_encode( $facts, JSON_UNESCAPED_UNICODE ), $schema, 'analysis', $max );
 	if ( is_wp_error( $res ) ) {
 		return $res;
 	}
-	// Structured parts (channels, opportunities, main recommendation) are stored apart from the texts.
-	update_post_meta( $p['id'], '_ost_ai_market', array(
-		'channels'             => (array) ( $res['channels'] ?? array() ),
-		'channels_note'        => sanitize_text_field( (string) ( $res['channels_note'] ?? '' ) ),
-		'main_recommendation'  => array_map( 'sanitize_textarea_field', array_map( 'strval', (array) ( $res['main_recommendation'] ?? array() ) ) ),
-		'market_opportunities' => array_map( function ( $o ) {
-			return array(
-				'title'     => sanitize_text_field( (string) ( $o['title'] ?? '' ) ),
-				'keywords'  => array_map( 'sanitize_text_field', array_map( 'strval', (array) ( $o['keywords'] ?? array() ) ) ),
-				'angle'     => sanitize_text_field( (string) ( $o['angle'] ?? '' ) ),
-				'why'       => sanitize_textarea_field( (string) ( $o['why'] ?? '' ) ),
-				'potential' => sanitize_text_field( (string) ( $o['potential'] ?? '' ) ),
-			);
-		}, array_slice( (array) ( $res['market_opportunities'] ?? array() ), 0, 5 ) ),
-	) );
-	foreach ( array( 'strengths', 'weaknesses', 'opportunities', 'threats', 'next_steps' ) as $k ) {
-		$res[ $k ] = implode( "\n", array_map( 'strval', (array) ( $res[ $k ] ?? array() ) ) );
+	if ( 'market' === $part ) {
+		// Structured parts (channels, opportunities, main recommendation) are stored apart from the texts.
+		update_post_meta( $p['id'], '_ost_ai_market', array(
+			'channels'             => (array) ( $res['channels'] ?? array() ),
+			'channels_note'        => sanitize_text_field( (string) ( $res['channels_note'] ?? '' ) ),
+			'main_recommendation'  => array_map( 'sanitize_textarea_field', array_map( 'strval', (array) ( $res['main_recommendation'] ?? array() ) ) ),
+			'market_opportunities' => array_map( function ( $o ) {
+				return array(
+					'title'     => sanitize_text_field( (string) ( $o['title'] ?? '' ) ),
+					'keywords'  => array_map( 'sanitize_text_field', array_map( 'strval', (array) ( $o['keywords'] ?? array() ) ) ),
+					'angle'     => sanitize_text_field( (string) ( $o['angle'] ?? '' ) ),
+					'why'       => sanitize_textarea_field( (string) ( $o['why'] ?? '' ) ),
+					'potential' => sanitize_text_field( (string) ( $o['potential'] ?? '' ) ),
+				);
+			}, array_slice( array_filter( (array) ( $res['market_opportunities'] ?? array() ), 'is_array' ), 0, 5 ) ),
+		) );
+		return array();
 	}
-	return array_map( 'strval', array_intersect_key( $res, ost_text_fields() ) );
+	foreach ( array( 'strengths', 'weaknesses', 'opportunities', 'threats', 'next_steps' ) as $k ) {
+		if ( isset( $res[ $k ] ) ) {
+			$res[ $k ] = implode( "\n", array_map( 'strval', (array) $res[ $k ] ) );
+		}
+	}
+	$res = array_intersect_key( $res, ost_text_fields() );
+	return array_map( function ( $v ) {
+		return is_array( $v ) ? implode( "\n", array_map( 'strval', $v ) ) : (string) $v;
+	}, $res );
+}
+
+/**
+ * Save AI texts of one part (merged with the texts of the other parts).
+ */
+function ost_writer_store( $id, $texts ) {
+	$old = get_post_meta( $id, '_ost_ai_texts', true );
+	update_post_meta( $id, '_ost_ai_texts', array_merge( is_array( $old ) ? $old : array(), (array) $texts ) );
 }
 
 /**

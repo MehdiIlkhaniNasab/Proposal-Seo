@@ -67,29 +67,79 @@ function ost_ai_track( $model, $in, $out ) {
 }
 
 /**
- * One request; the answer is a JSON object matching $schema.
+ * One structured AI call, made reliable: a reply that was cut off (length limit) or is not
+ * valid JSON is repaired when possible, otherwise asked again once — shorter and with a
+ * larger limit. Why the last call failed is kept (ost_ai_last_failure()) so an error is
+ * never a mystery.
  *
- * @param string $purpose analysis|light.
- * @return array|WP_Error
+ * @return array|WP_Error Decoded JSON.
  */
 function ost_ai_request( $system, $user, $schema, $purpose = 'analysis', $max_tokens = 8000 ) {
-	if ( ost_ai_via_sokan() ) {
-		return sap_ai_request( $system, $user, $schema, array( 'purpose' => $purpose, 'max_tokens' => $max_tokens, 'effort' => 'medium', 'timeout' => 300 ) );
-	}
-	if ( ! ost_ai_connected() ) {
+	if ( ! ost_ai_via_sokan() && ! ost_ai_connected() ) {
 		return new WP_Error( 'ost_ai_key', 'هوش مصنوعی متصل نیست (اسطرلاب › تنظیمات › اتصال‌ها).' );
 	}
 	$u = ost_ai_usage();
-	if ( (float) ost_setting( 'ai_budget', 10 ) > 0 && $u['cost'] >= (float) ost_setting( 'ai_budget', 10 ) ) {
+	if ( ! ost_ai_via_sokan() && (float) ost_setting( 'ai_budget', 10 ) > 0 && $u['cost'] >= (float) ost_setting( 'ai_budget', 10 ) ) {
 		return new WP_Error( 'ost_ai_budget', 'سقف بودجه ماهانه هوش مصنوعی اسطرلاب پر شده است؛ متن‌های آماده (بدون هوش مصنوعی) استفاده می‌شوند.' );
 	}
 	if ( function_exists( 'set_time_limit' ) ) {
 		@set_time_limit( 330 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors
 	}
+	$res = ost_ai_call( $system, $user, $schema, $purpose, $max_tokens );
+	if ( is_wp_error( $res ) && in_array( $res->get_error_code(), array( 'ost_ai_parse', 'ost_ai_cut', 'ost_ai_http', 'ost_ai_empty' ), true ) && empty( $res->get_error_data()['final'] ) ) {
+		ost_ai_note_failure( $res );
+		$retry = $system . "\n\nمهم: پاسخ قبلی " . ( 'ost_ai_cut' === $res->get_error_code() ? 'به سقف طول رسید و ناقص ماند' : 'قابل خواندن نبود' ) . '. این بار فقط و فقط یک شیء JSON معتبر برگردان، متن‌ها را کوتاه‌تر و فشرده بنویس، داخل رشته‌ها خط جدید خام نگذار (از \n استفاده کن) و هیچ توضیحی بیرون از JSON ننویس.';
+		$res   = ost_ai_call( $retry, $user, $schema, $purpose, min( 16000, (int) round( $max_tokens * 1.5 ) ) );
+	}
+	if ( is_wp_error( $res ) ) {
+		ost_ai_note_failure( $res );
+		$partial = $res->get_error_data()['partial'] ?? null;
+		if ( 'ost_ai_cut' === $res->get_error_code() && is_array( $partial ) && $partial ) {
+			return $partial; // Still cut after the retry: use the complete part (missing fields fall back to templates).
+		}
+	}
+	return $res;
+}
+
+/**
+ * One attempt with the configured provider.
+ */
+function ost_ai_call( $system, $user, $schema, $purpose, $max_tokens ) {
+	if ( ost_ai_via_sokan() ) {
+		$r = sap_ai_request( $system, $user, $schema, array( 'purpose' => $purpose, 'max_tokens' => $max_tokens, 'effort' => 'medium', 'timeout' => 300 ) );
+		if ( is_wp_error( $r ) ) {
+			return new WP_Error( 'ost_ai_http', $r->get_error_message() . ' (از طریق سکان)' );
+		}
+		return is_array( $r ) ? $r : new WP_Error( 'ost_ai_parse', 'پاسخ هوش مصنوعی (سکان) قابل خواندن نبود.', array( 'raw' => mb_substr( (string) $r, 0, 600 ) ) );
+	}
 	$model = preg_replace( '/[^a-zA-Z0-9._:\/-]/', '', (string) ( 'light' === $purpose ? ost_setting( 'ai_model_light', 'gpt-4.1-mini' ) : ost_setting( 'ai_model', 'claude-sonnet-5-5' ) ) );
 	return 'anthropic' === ost_setting( 'ai_provider', 'gateway' )
 		? ost_ai_anthropic( $model, $system, $user, $schema, $max_tokens )
 		: ost_ai_gateway( $model, $system, $user, $schema, $max_tokens );
+}
+
+/**
+ * Decode a reply: JSON as is, else repaired; an empty or cut reply gets its own error.
+ *
+ * @param bool $cut The provider said the reply hit the length limit.
+ */
+function ost_ai_decode( $text, $cut, $model ) {
+	$text = (string) $text;
+	if ( '' === trim( $text ) ) {
+		return new WP_Error( 'ost_ai_empty', 'هوش مصنوعی پاسخ خالی داد (مدل ' . $model . ').', array( 'raw' => '' ) );
+	}
+	$json = ost_ai_extract_json( $text );
+	if ( null !== $json ) {
+		return $json;
+	}
+	$fixed = ost_ai_repair_json( $text );
+	if ( null !== $fixed && ! $cut ) {
+		return $fixed;
+	}
+	if ( $cut ) {
+		return new WP_Error( 'ost_ai_cut', 'پاسخ هوش مصنوعی به سقف طول رسید و ناقص ماند (مدل ' . $model . ').', array( 'raw' => mb_substr( $text, -600 ), 'partial' => $fixed ) );
+	}
+	return new WP_Error( 'ost_ai_parse', 'پاسخ هوش مصنوعی JSON معتبر نبود (مدل ' . $model . ').', array( 'raw' => mb_substr( $text, 0, 600 ) ) );
 }
 
 /**
@@ -125,17 +175,30 @@ function ost_ai_gateway( $model, $system, $user, $schema, $max_tokens ) {
 	if ( is_wp_error( $res ) ) {
 		return new WP_Error( 'ost_ai_http', 'اتصال به سرویس هوش مصنوعی ناموفق بود: ' . ost_net_error( $res ) );
 	}
-	$data = json_decode( ost_body( $res ), true );
+	$raw  = ost_body( $res );
+	$data = json_decode( $raw, true );
 	if ( 200 !== $code ) {
 		$msg = (string) ( $data['error']['message'] ?? 'HTTP ' . $code );
 		if ( 402 === $code || preg_match( '/quota|credit|balance|insufficient/i', $msg ) ) {
-			return new WP_Error( 'ost_ai_credit', 'اعتبار حساب سرویس هوش مصنوعی تمام شده است؛ حساب را شارژ کنید.' );
+			return new WP_Error( 'ost_ai_credit', 'اعتبار حساب سرویس هوش مصنوعی تمام شده است؛ حساب را شارژ کنید.', array( 'final' => true ) );
 		}
-		return new WP_Error( 'ost_ai_http', 'خطای سرویس هوش مصنوعی: ' . mb_substr( wp_strip_all_tags( $msg ), 0, 240 ) );
+		return new WP_Error( 'ost_ai_http', 'خطای سرویس هوش مصنوعی (' . $code . '): ' . mb_substr( wp_strip_all_tags( $msg ), 0, 240 ), array( 'final' => in_array( $code, array( 401, 403, 404 ), true ), 'raw' => mb_substr( $raw, 0, 400 ) ) );
+	}
+	if ( ! is_array( $data ) ) {
+		return new WP_Error( 'ost_ai_parse', 'پاسخ سرویس هوش مصنوعی JSON نبود (شاید صفحه خطای پراکسی/دروازه).', array( 'raw' => mb_substr( wp_strip_all_tags( $raw ), 0, 400 ) ) );
 	}
 	ost_ai_track( $model, (int) ( $data['usage']['prompt_tokens'] ?? 0 ), (int) ( $data['usage']['completion_tokens'] ?? 0 ) );
-	$json = ost_ai_extract_json( (string) ( $data['choices'][0]['message']['content'] ?? '' ) );
-	return null === $json ? new WP_Error( 'ost_ai_parse', 'پاسخ هوش مصنوعی قابل خواندن نبود؛ دوباره امتحان کنید.' ) : $json;
+	$choice  = (array) ( $data['choices'][0] ?? array() );
+	$content = $choice['message']['content'] ?? '';
+	if ( is_array( $content ) ) { // Some gateways return content parts.
+		$content = implode( '', array_map( function ( $part ) {
+			return is_array( $part ) ? (string) ( $part['text'] ?? '' ) : (string) $part;
+		}, $content ) );
+	}
+	if ( '' === trim( (string) $content ) && ! empty( $choice['message']['tool_calls'][0]['function']['arguments'] ) ) {
+		$content = (string) $choice['message']['tool_calls'][0]['function']['arguments'];
+	}
+	return ost_ai_decode( $content, in_array( $choice['finish_reason'] ?? '', array( 'length', 'max_tokens' ), true ), $model );
 }
 
 /**
@@ -164,7 +227,7 @@ function ost_ai_anthropic( $model, $system, $user, $schema, $max_tokens ) {
 	$code = (int) wp_remote_retrieve_response_code( $res );
 	$data = json_decode( wp_remote_retrieve_body( $res ), true );
 	if ( 200 !== $code ) {
-		return new WP_Error( 'ost_ai_http', 'خطای سرویس هوش مصنوعی: ' . ( $data['error']['message'] ?? 'HTTP ' . $code ) );
+		return new WP_Error( 'ost_ai_http', 'خطای سرویس هوش مصنوعی (' . $code . '): ' . ( $data['error']['message'] ?? 'HTTP ' . $code ), array( 'final' => in_array( $code, array( 400, 401, 403, 404 ), true ) ) );
 	}
 	ost_ai_track( $model, (int) ( $data['usage']['input_tokens'] ?? 0 ), (int) ( $data['usage']['output_tokens'] ?? 0 ) );
 	$text = '';
@@ -173,8 +236,7 @@ function ost_ai_anthropic( $model, $system, $user, $schema, $max_tokens ) {
 			$text .= (string) $block['text'];
 		}
 	}
-	$json = ost_ai_extract_json( $text );
-	return null === $json ? new WP_Error( 'ost_ai_parse', 'پاسخ هوش مصنوعی قابل خواندن نبود؛ دوباره امتحان کنید.' ) : $json;
+	return ost_ai_decode( $text, 'max_tokens' === ( $data['stop_reason'] ?? '' ), $model );
 }
 
 /**
@@ -193,6 +255,124 @@ function ost_ai_extract_json( $text ) {
 	}
 	$json = json_decode( substr( $text, $start, $end - $start + 1 ), true );
 	return is_array( $json ) ? $json : null;
+}
+
+/**
+ * Repair the usual faults of model JSON: raw line breaks / tabs inside strings, trailing
+ * commas, and a reply cut in the middle (open strings, arrays and objects are closed).
+ *
+ * @return array|null
+ */
+function ost_ai_repair_json( $text ) {
+	$text  = (string) $text;
+	$start = strpos( $text, '{' );
+	if ( false === $start ) {
+		return null;
+	}
+	$text  = substr( $text, $start );
+	$out   = '';
+	$stack = array();
+	$in    = false;
+	$esc   = false;
+	$len   = strlen( $text );
+	$last  = 0; // Length of $out at the last point where a value had ended.
+	for ( $i = 0; $i < $len; $i++ ) {
+		$ch = $text[ $i ];
+		if ( $in ) {
+			if ( $esc ) {
+				$esc  = false;
+				$out .= $ch;
+			} elseif ( '\\' === $ch ) {
+				$esc  = true;
+				$out .= $ch;
+			} elseif ( '"' === $ch ) {
+				$in   = false;
+				$out .= $ch;
+			} elseif ( "\n" === $ch ) {
+				$out .= '\n';
+			} elseif ( "\r" === $ch ) {
+				continue;
+			} elseif ( "\t" === $ch ) {
+				$out .= '\t';
+			} else {
+				$out .= $ch;
+			}
+			continue;
+		}
+		if ( '"' === $ch ) {
+			$in = true;
+		} elseif ( '{' === $ch || '[' === $ch ) {
+			$stack[] = '{' === $ch ? '}' : ']';
+		} elseif ( '}' === $ch || ']' === $ch ) {
+			$out = rtrim( $out );
+			$out = rtrim( $out, ',' ); // Trailing comma.
+			array_pop( $stack );
+			$out .= $ch;
+			if ( ! $stack ) {
+				break; // End of the object; ignore anything after it.
+			}
+			$last = strlen( $out );
+			continue;
+		}
+		$out .= $ch;
+		if ( ',' === $ch ) {
+			$last = strlen( $out ) - 1;
+		}
+	}
+	$json = json_decode( $out, true );
+	if ( is_array( $json ) ) {
+		return $json;
+	}
+	if ( ! $stack ) {
+		return null;
+	}
+	// Cut reply: drop the unfinished value and close what is open.
+	$cut   = rtrim( substr( $out, 0, $last ), " \n\r\t," );
+	$depth = array();
+	$in    = false;
+	$esc   = false;
+	for ( $i = 0, $n = strlen( $cut ); $i < $n; $i++ ) {
+		$ch = $cut[ $i ];
+		if ( $in ) {
+			$esc = ! $esc && '\\' === $ch;
+			if ( ! $esc && '"' === $ch && ( $i < 1 || '\\' !== $cut[ $i - 1 ] ) ) {
+				$in = false;
+			}
+			continue;
+		}
+		if ( '"' === $ch ) {
+			$in = true;
+		} elseif ( '{' === $ch || '[' === $ch ) {
+			$depth[] = '{' === $ch ? '}' : ']';
+		} elseif ( '}' === $ch || ']' === $ch ) {
+			array_pop( $depth );
+		}
+	}
+	if ( $in ) {
+		return null;
+	}
+	$cut  = preg_replace( '/[,:]\s*$/', '', $cut );
+	$cut  = preg_replace( '/,\s*"[^"]*"\s*$/u', '', $cut ); // A key without its value.
+	$json = json_decode( $cut . implode( '', array_reverse( $depth ) ), true );
+	return is_array( $json ) ? $json : null;
+}
+
+/**
+ * Remember why the last AI call failed (shown in settings and in the step message).
+ */
+function ost_ai_note_failure( WP_Error $e ) {
+	$d = (array) $e->get_error_data();
+	update_option( 'ost_ai_last_failure', array(
+		'at'   => time(),
+		'code' => $e->get_error_code(),
+		'msg'  => $e->get_error_message(),
+		'raw'  => (string) ( $d['raw'] ?? '' ),
+	), false );
+}
+
+function ost_ai_last_failure() {
+	$f = get_option( 'ost_ai_last_failure' );
+	return is_array( $f ) ? $f : null;
 }
 
 /**

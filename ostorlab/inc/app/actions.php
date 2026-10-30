@@ -399,11 +399,12 @@ add_action( 'wp_ajax_ost_ai_texts', function () {
 	ost_ajax_guard();
 	$id = (int) ost_post( 'id' );
 	$p  = ost_proposal( $id );
-	$t  = ost_writer_ai( $p, ost_data( $id, 'analysis' ) );
+	$part = sanitize_key( ost_post( 'part', 'all' ) );
+	$t    = ost_writer_ai( $p, ost_data( $id, 'analysis' ), isset( ost_writer_parts()[ $part ] ) ? $part : 'all' );
 	if ( is_wp_error( $t ) ) {
 		wp_send_json_error( array( 'msg' => $t->get_error_message() ) );
 	}
-	update_post_meta( $id, '_ost_ai_texts', $t );
+	ost_writer_store( $id, $t );
 	ost_compute( $id );
 	wp_send_json_success( array( 'msg' => 'متن‌ها با هوش مصنوعی بازنویسی شد.' ) );
 } );
@@ -429,3 +430,136 @@ add_action( 'wp_ajax_ost_test', function () {
 	}
 	wp_send_json_success( $r );
 } );
+
+// Business discovery: save the answers (and confirm: the analysis continues).
+add_action( 'admin_post_ost_discovery_save', function () {
+	ost_guard( 'ost_discovery_save' );
+	$id = (int) ost_post( 'id' );
+	$p  = ost_proposal( $id );
+	if ( ! $p ) {
+		ost_back( ost_url(), 'پروپوزال پیدا نشد.', false );
+	}
+	$d       = ost_discovery( $id );
+	$answers = array();
+	$in      = (array) ost_post( 'ans', array() );
+	$other   = (array) ost_post( 'other', array() );
+	foreach ( $d['questions'] as $q ) {
+		$v = $in[ $q['id'] ] ?? ( 'multi' === $q['type'] ? array() : '' );
+		if ( 'multi' === $q['type'] ) {
+			$v = array_values( array_filter( array_map( 'sanitize_text_field', (array) $v ) ) );
+			$o = sanitize_text_field( (string) ( $other[ $q['id'] ] ?? '' ) );
+			if ( '' !== $o ) {
+				$v[] = $o;
+			}
+		} elseif ( 'choice' === $q['type'] ) {
+			$v = sanitize_text_field( (string) $v );
+			$o = sanitize_text_field( (string) ( $other[ $q['id'] ] ?? '' ) );
+			if ( '__other' === $v || ( '' === $v && '' !== $o ) ) {
+				$v = $o;
+			}
+		} else {
+			$v = sanitize_textarea_field( (string) $v );
+		}
+		$answers[ $q['id'] ] = $v;
+	}
+	$profile            = $d['profile'];
+	$profile['summary'] = sanitize_textarea_field( (string) ost_post( 'summary', $profile['summary'] ?? '' ) );
+	$confirm            = (bool) ost_post( 'confirm' );
+	ost_discovery_save( $id, array(
+		'answers'   => $answers,
+		'profile'   => $profile,
+		'status'    => $confirm ? 'confirmed' : $d['status'],
+		'confirmed' => $confirm ? time() : $d['confirmed'],
+		'sig'       => ost_discovery_sig( $p ),
+	) );
+	if ( $confirm ) {
+		ost_log( $id, 'پروفایل کسب‌وکار تأیید شد' );
+		$job = (array) $p['job'];
+		if ( ! empty( $job['steps'] ) ) {
+			// A new profile changes which keywords count: review them again, then rewrite.
+			$kr              = ost_kw_review( $id );
+			$kr['confirmed'] = 0;
+			update_post_meta( $id, '_ost_kw_review', $kr );
+			ost_job_reopen( $id, array( 'gate:discovery', 'aikw', 'compute', 'gate:keywords', 'ai:' ) );
+			ost_back( ost_proposal_url( $id, 'summary', array( 'autorun' => 'resume' ) ), 'پروفایل تأیید شد؛ تحلیل کلمات ادامه پیدا می‌کند.' );
+		}
+		ost_back( ost_proposal_url( $id, 'summary', array( 'autorun' => 1 ) ), 'پروفایل تأیید شد؛ تحلیل شروع می‌شود.' );
+	}
+	ost_back( ost_proposal_url( $id, 'discovery' ), 'پاسخ‌ها ذخیره شد.' );
+} );
+
+// Business discovery: build the draft again (reads the sites, asks the AI).
+add_action( 'admin_post_ost_discovery_build', function () {
+	ost_guard( 'ost_discovery_build' );
+	$id = (int) ost_post( 'id' );
+	$p  = ost_proposal( $id );
+	if ( function_exists( 'set_time_limit' ) ) {
+		@set_time_limit( 300 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors
+	}
+	$r = $p ? ost_discovery_build( $p ) : new WP_Error( 'ost', 'پروپوزال پیدا نشد.' );
+	ost_back( ost_proposal_url( $id, 'discovery' ), is_wp_error( $r ) ? $r->get_error_message() : $r, ! is_wp_error( $r ) );
+} );
+
+// Keyword review: excluded topics / words, restored words, remember for the client, confirm.
+add_action( 'admin_post_ost_kw_review', function () {
+	ost_guard( 'ost_kw_review' );
+	$id = (int) ost_post( 'id' );
+	$p  = ost_proposal( $id );
+	if ( ! $p ) {
+		ost_back( ost_url(), 'پروپوزال پیدا نشد.', false );
+	}
+	$clean   = function ( $list ) {
+		return array_values( array_unique( array_filter( array_map( 'ost_norm', array_map( 'sanitize_text_field', (array) $list ) ) ) ) );
+	};
+	$shown   = $clean( ost_post( 'topic_all', array() ) );
+	$keep    = $clean( ost_post( 'topic_on', array() ) );
+	$old     = ost_kw_review( $id );
+	// Topics on this screen: unchecked = excluded; topics not shown keep their old state.
+	$topics  = array_values( array_unique( array_merge( array_diff( (array) $old['topics'], $shown ), array_diff( $shown, $keep ) ) ) );
+	$restore = array_values( array_unique( array_merge( array_diff( (array) $old['restore'], $clean( ost_post( 'restore_all', array() ) ) ), $clean( ost_post( 'restore', array() ) ) ) ) );
+	$words   = array_values( array_diff( array_unique( array_merge( (array) $old['words'], $clean( ost_list( (string) ost_post( 'add_words' ) ) ) ) ), $restore ) );
+	$confirm = (bool) ost_post( 'confirm' );
+	update_post_meta( $id, '_ost_kw_review', array(
+		'topics'    => $topics,
+		'words'     => $words,
+		'restore'   => $restore,
+		'confirmed' => $confirm ? time() : 0,
+		'sig'       => ost_kw_review_sig( $p ),
+	) );
+	if ( ost_post( 'remember' ) && $p['inputs']['domain'] ) {
+		$all            = get_option( 'ost_client_kw', array() );
+		$dom            = ost_domain( $p['inputs']['domain'] );
+		$all[ $dom ]    = array( 'topics' => $topics, 'terms' => ost_discovery_excluded( $id ) );
+		update_option( 'ost_client_kw', $all, false );
+	}
+	ost_compute( $id );
+	if ( $confirm ) {
+		ost_log( $id, sprintf( 'کلمات تأیید شد (%s موضوع کنار گذاشته شد)', ost_num( count( $topics ) ) ) );
+		if ( empty( $p['job']['steps'] ) ) {
+			ost_back( ost_proposal_url( $id, 'summary', array( 'autorun' => 1 ) ), 'کلمات تأیید شد؛ تحلیل ادامه پیدا می‌کند.' );
+		}
+		ost_job_reopen( $id, array( 'gate:keywords', 'compute', 'ai:' ) );
+		ost_back( ost_proposal_url( $id, 'summary', array( 'autorun' => 'resume' ) ), 'کلمات تأیید شد؛ حالا پروپوزال نوشته می‌شود.' );
+	}
+	ost_back( ost_proposal_url( $id, 'keywords' ), 'تغییرات اعمال شد و بازار دوباره محاسبه شد.' );
+} );
+
+/**
+ * Set steps (exact keys, or prefixes ending in ":") back to pending so a resumed run redoes them.
+ */
+function ost_job_reopen( $id, $keys ) {
+	$job = get_post_meta( $id, '_ost_job', true );
+	if ( ! is_array( $job ) || empty( $job['steps'] ) ) {
+		return;
+	}
+	foreach ( $job['steps'] as $k => $s ) {
+		foreach ( $keys as $want ) {
+			if ( $k === $want || ( ':' === substr( $want, -1 ) && 0 === strpos( $k, $want ) ) ) {
+				$job['steps'][ $k ]['status'] = 'pending';
+				$job['steps'][ $k ]['msg']    = '';
+			}
+		}
+	}
+	$job['status'] = 'running';
+	update_post_meta( $id, '_ost_job', $job );
+}
