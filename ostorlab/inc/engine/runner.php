@@ -57,8 +57,19 @@ function ost_job_plan( $p, $fresh = false ) {
 	}
 	$job = array( 'status' => 'running', 'steps' => $steps, 'started' => time(), 'msg' => '' );
 	update_post_meta( $p['id'], '_ost_job', $job );
-	update_post_meta( $p['id'], '_ost_status', 'running' );
+	ost_job_status( $p['id'], 'running' );
 	return $job;
+}
+
+/**
+ * Status from the analysis job; a proposal already sent / in negotiation / closed keeps its sales status.
+ */
+function ost_job_status( $id, $status ) {
+	$cur = (string) get_post_meta( $id, '_ost_status', true );
+	if ( in_array( $cur, array( 'sent', 'negotiating', 'won', 'lost' ), true ) ) {
+		return;
+	}
+	update_post_meta( $id, '_ost_status', $status );
 }
 
 /**
@@ -82,7 +93,7 @@ function ost_job_tick( $id ) {
 	if ( null === $key ) {
 		$job['status'] = 'done';
 		update_post_meta( $id, '_ost_job', $job );
-		update_post_meta( $id, '_ost_status', 'ready' );
+		ost_job_status( $id, 'ready' );
 		return $job;
 	}
 	$res = ost_job_step( $p, $key );
@@ -90,7 +101,7 @@ function ost_job_tick( $id ) {
 		$job['status'] = 'paused';
 		$job['msg']    = $res->get_error_message();
 		update_post_meta( $id, '_ost_job', $job );
-		update_post_meta( $id, '_ost_status', 'paused' );
+		ost_job_status( $id, 'paused' );
 		return $job;
 	}
 	$job['steps'][ $key ]['status'] = is_wp_error( $res ) ? 'error' : 'done';
@@ -100,7 +111,8 @@ function ost_job_tick( $id ) {
 	} ) );
 	if ( ! $left ) {
 		$job['status'] = 'done';
-		update_post_meta( $id, '_ost_status', 'ready' );
+		ost_job_status( $id, 'ready' );
+		ost_log( $id, 'تحلیل کامل شد' );
 	}
 	update_post_meta( $id, '_ost_job', $job );
 	return $job;
@@ -260,5 +272,6 @@ function ost_compute( $id ) {
 	$rev          = ost_revenue_range( $a['forecast']['buyer_mid'], $in );
 	$a['forecast']['revenue'] = $rev;
 	ost_set_data( $id, 'analysis', $a );
+	update_post_meta( $id, '_ost_value', array( 'total' => $sel['total'], 'monthly' => $sel['monthly'], 'fees' => $sel['fees'], 'package' => $sel['label'] ) );
 	return $a;
 }

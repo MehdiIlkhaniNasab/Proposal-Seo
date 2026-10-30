@@ -13,10 +13,15 @@ $val = function ( $k ) use ( $in ) {
 };
 $cost = $p ? ost_ss_cost_estimate( $p ) : null;
 ?>
-<div class="ost-bar"><h1><?php echo $p ? 'ویرایش پروپوزال' : 'پروپوزال جدید'; ?></h1></div>
+<header class="ost-head">
+	<div>
+		<p class="ost-crumb"><a href="<?php echo esc_url( ost_url() ); ?>">پروپوزال‌ها</a><?php echo $p ? ' / <a href="' . esc_url( ost_proposal_url( $p['id'] ) ) . '">' . esc_html( $p['title'] ) . '</a>' : ''; ?></p>
+		<h1><?php echo $p ? 'ویرایش ورودی‌های پروپوزال' : 'پروپوزال جدید'; ?></h1>
+		<p class="ost-meta"><span>۵ تا ۷ کلمه کلیدی و ۳ تا ۵ رقیب کافی است؛ بقیه را اسطرلاب می‌سازد.</span></p>
+	</div>
+</header>
 <form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="ost-form" id="ost-proposal-form">
-	<?php wp_nonce_field( 'ost_save_proposal' ); ?>
-	<input type="hidden" name="action" value="ost_save_proposal">
+	<?php ost_form_fields( 'ost_save_proposal' ); ?>
 	<input type="hidden" name="id" value="<?php echo (int) ( $p['id'] ?? 0 ); ?>">
 
 	<section class="ost-panel">

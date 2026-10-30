@@ -33,15 +33,14 @@ $test = function ( $svc ) {
 	echo '<button type="button" class="ost-btn sm" data-test="' . esc_attr( $svc ) . '">تست اتصال</button><span class="ost-test-out" data-out="' . esc_attr( $svc ) . '"></span>';
 };
 ?>
-<div class="ost-bar"><h1>تنظیمات اسطرلاب</h1></div>
+<header class="ost-head"><div><p class="ost-crumb">اسطرلاب</p><h1>تنظیمات و اتصال‌ها</h1></div></header>
 <nav class="ost-tabs">
 	<?php foreach ( $tabs as $k => $l ) : ?>
-		<a href="<?php echo esc_url( add_query_arg( 'tab', $k, ost_admin_url( 'settings' ) ) ); ?>" class="<?php echo $tab === $k ? 'on' : ''; ?>"><?php echo esc_html( $l ); ?></a>
+		<a href="<?php echo esc_url( ost_url( 'settings/' . $k ) ); ?>" class="<?php echo $tab === $k ? 'on' : ''; ?>"><?php echo esc_html( $l ); ?></a>
 	<?php endforeach; ?>
 </nav>
-<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="ost-form">
-	<?php wp_nonce_field( 'ost_save_settings' ); ?>
-	<input type="hidden" name="action" value="ost_save_settings">
+<form method="post" enctype="multipart/form-data" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="ost-form">
+	<?php ost_form_fields( 'ost_save_settings' ); ?>
 	<input type="hidden" name="tab" value="<?php echo esc_attr( $tab ); ?>">
 
 <?php if ( 'connections' === $tab ) : ?>
@@ -128,7 +127,7 @@ $test = function ( $svc ) {
 		<div class="ost-grid g3">
 			<?php $text( 'agency_name', 'نام آژانس' ); ?>
 			<?php $text( 'agency_tagline', 'شعار' ); ?>
-			<label>لوگو<span class="ost-logo-pick"><img src="<?php echo esc_url( ost_logo_url() ); ?>" alt="" id="ost-logo-img"><input type="text" dir="ltr" name="s[agency_logo]" id="ost-logo" value="<?php echo esc_attr( $s['agency_logo'] ); ?>" placeholder="لوگوی رونق (پیش‌فرض)"><button type="button" class="ost-btn sm" data-media="ost-logo">انتخاب از رسانه</button></span><small>برای کیفیت بهتر PNG با عرض حداقل ۶۰۰ پیکسل و پس‌زمینه شفاف.</small></label>
+			<label>لوگو<span class="ost-logo-pick"><img src="<?php echo esc_url( ost_logo_url() ); ?>" alt="" id="ost-logo-img"><input type="file" name="logo_file" accept="image/*"><input type="hidden" name="s[agency_logo]" value="<?php echo esc_attr( $s['agency_logo'] ); ?>"></span><small>برای کیفیت بهتر PNG با عرض حداقل ۶۰۰ پیکسل و پس‌زمینه شفاف.</small></label>
 			<?php $text( 'agency_site', 'وب‌سایت', '', true ); ?>
 			<?php $text( 'agency_phone', 'تلفن آژانس', '', true ); ?>
 			<?php $text( 'agency_email', 'ایمیل آژانس', '', true ); ?>
@@ -145,7 +144,7 @@ $test = function ( $svc ) {
 			<?php $text( 'consultant_title', 'سمت' ); ?>
 			<?php $text( 'consultant_phone', 'موبایل / تلفن مستقیم', '', true ); ?>
 			<?php $text( 'consultant_email', 'ایمیل مستقیم', '', true ); ?>
-			<label>عکس<span class="ost-logo-pick"><img src="<?php echo esc_url( $s['consultant_photo'] ?: ost_logo_url() ); ?>" alt="" id="ost-photo-img"><input type="text" dir="ltr" name="s[consultant_photo]" id="ost-photo" value="<?php echo esc_attr( $s['consultant_photo'] ); ?>" placeholder="اختیاری"><button type="button" class="ost-btn sm" data-media="ost-photo">انتخاب از رسانه</button></span><small>مربعی؛ خالی = حرف اول نام.</small></label>
+			<label>عکس<span class="ost-logo-pick"><img src="<?php echo esc_url( $s['consultant_photo'] ?: ost_logo_url() ); ?>" alt="" id="ost-photo-img"><input type="file" name="photo_file" accept="image/*"><input type="hidden" name="s[consultant_photo]" value="<?php echo esc_attr( $s['consultant_photo'] ); ?>"></span><small>مربعی؛ خالی = حرف اول نام.</small></label>
 			<?php $text( 'proposal_prefix', 'پیشوند شماره پروپوزال', 'مثلاً RN ← RN-1405-012', true ); ?>
 			<?php $text( 'proposal_validity', 'اعتبار پیش‌فرض پروپوزال (روز)' ); ?>
 		</div>

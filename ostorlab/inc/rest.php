@@ -7,7 +7,7 @@
  *   POST /wp-json/ostorlab/v1/sf/{id}?domain=   upload an export (Internal All / All Inlinks / Redirects, plain or .gz)
  *
  * The agent authenticates with the proposal's token in the X-Ostorlab-Key header.
- * The web view of a proposal is /?ostorlab_deck={id}&t={token}.
+ * The client's web view of a proposal is /seo/proposal/view/{id}/{token}/ (inc/app/router.php).
  *
  * @package Ostorlab
  */
@@ -78,24 +78,4 @@ add_action( 'rest_api_init', function () {
 			return array( 'ok' => true, 'domain' => $domain, 'kind' => $r['kind'] );
 		},
 	) );
-} );
-
-/**
- * Web view of a proposal (shareable link with the token).
- */
-add_action( 'template_redirect', function () {
-	if ( empty( $_GET['ostorlab_deck'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
-		return;
-	}
-	$id = (int) $_GET['ostorlab_deck']; // phpcs:ignore WordPress.Security.NonceVerification
-	$p  = ost_proposal( $id );
-	$t  = sanitize_text_field( wp_unslash( $_GET['t'] ?? '' ) ); // phpcs:ignore WordPress.Security.NonceVerification
-	if ( ! $p || ( ! hash_equals( $p['token'], $t ) && ! current_user_can( OST_CAP ) ) || empty( get_post_meta( $id, '_ost_shared', true ) ) && ! current_user_can( OST_CAP ) ) {
-		status_header( 404 );
-		exit;
-	}
-	nocache_headers();
-	header( 'X-Robots-Tag: noindex, nofollow' );
-	echo ost_deck_html( $id, array( 'web' => true ) ); // phpcs:ignore WordPress.Security.EscapeOutput
-	exit;
 } );

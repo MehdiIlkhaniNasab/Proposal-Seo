@@ -72,7 +72,11 @@
 			tick( true );
 		} ) );
 		if ( run.dataset.autorun === '1' ) {
-			history.replaceState( null, '', window.location.href.replace( /&autorun=1/, '' ) );
+			const u = new URL( window.location.href );
+			u.searchParams.delete( 'autorun' );
+			u.searchParams.delete( 'ost_msg' );
+			u.searchParams.delete( 'ost_ok' );
+			history.replaceState( null, '', u.toString() );
 			start( false );
 		} else if ( run.dataset.status === 'running' ) {
 			lock( true );
@@ -136,18 +140,71 @@
 		upd();
 	} );
 
-	// Image pickers (media library): logo and presenter photo.
-	document.querySelectorAll( '[data-media]' ).forEach( ( btn ) => btn.addEventListener( 'click', () => {
-		if ( ! window.wp || ! wp.media ) {
-			return;
+	// Mobile navigation.
+	const shell = document.querySelector( '.ost-shell' );
+	document.querySelectorAll( '[data-ost-open-nav]' ).forEach( ( b ) => b.addEventListener( 'click', () => shell.classList.add( 'nav-open' ) ) );
+	document.querySelectorAll( '[data-ost-close-nav]' ).forEach( ( b ) => b.addEventListener( 'click', () => shell.classList.remove( 'nav-open' ) ) );
+
+	// Copy buttons (client link).
+	document.querySelectorAll( '[data-copy]' ).forEach( ( b ) => b.addEventListener( 'click', () => {
+		const done = () => {
+			const t = b.textContent;
+			b.textContent = '✓ کپی شد';
+			setTimeout( () => ( b.textContent = t ), 1600 );
+		};
+		if ( navigator.clipboard ) {
+			navigator.clipboard.writeText( b.dataset.copy ).then( done );
+		} else {
+			const i = document.createElement( 'input' );
+			i.value = b.dataset.copy;
+			document.body.appendChild( i );
+			i.select();
+			document.execCommand( 'copy' );
+			i.remove();
+			done();
 		}
-		const target = btn.dataset.media;
-		const frame = wp.media( { title: 'انتخاب تصویر', library: { type: 'image' }, multiple: false } );
-		frame.on( 'select', () => {
-			const url = frame.state().get( 'selection' ).first().toJSON().url;
-			document.getElementById( target ).value = url;
-			document.getElementById( target + '-img' ).src = url;
-		} );
-		frame.open();
 	} ) );
+
+	// Sales stage «lost»: ask for the reason first.
+	document.querySelectorAll( '.ost-salesbar [data-lost]' ).forEach( ( b ) => b.addEventListener( 'click', ( e ) => {
+		const sel = b.closest( 'form' ).querySelector( '.ost-lost-reason' );
+		if ( sel.hidden ) {
+			e.preventDefault();
+			sel.hidden = false;
+			sel.focus();
+			b.textContent = 'ثبت «رد شد» با این دلیل';
+		}
+	} ) );
+
+	// Dashboard: search, status chips and funnel rows filter the proposals table.
+	const list = document.querySelector( '.ost-list tbody' );
+	if ( list ) {
+		const search = document.querySelector( '[data-search]' );
+		const none = document.querySelector( '.ost-noresult' );
+		let statuses = '';
+		const norm = ( s ) => s.replace( /ي/g, 'ی' ).replace( /ك/g, 'ک' ).replace( /\u200c/g, ' ' ).toLowerCase().trim();
+		const apply = () => {
+			const q = norm( search.value || '' );
+			const allowed = statuses ? statuses.split( ',' ) : null;
+			let shown = 0;
+			list.querySelectorAll( 'tr' ).forEach( ( tr ) => {
+				const ok = ( ! allowed || allowed.includes( tr.dataset.status ) ) && ( ! q || tr.dataset.text.includes( q ) );
+				tr.hidden = ! ok;
+				shown += ok ? 1 : 0;
+			} );
+			none.hidden = shown > 0;
+		};
+		search.addEventListener( 'input', apply );
+		const chips = document.querySelectorAll( '[data-chips] button' );
+		const pick = ( value ) => {
+			statuses = value;
+			chips.forEach( ( c ) => c.classList.toggle( 'on', c.dataset.filter === value ) );
+			apply();
+		};
+		chips.forEach( ( c ) => c.addEventListener( 'click', () => pick( c.dataset.filter ) ) );
+		document.querySelectorAll( '.ost-funnel-row' ).forEach( ( r ) => r.addEventListener( 'click', () => {
+			pick( r.dataset.filter );
+			list.closest( '.ost-panel' ).scrollIntoView( { behavior: 'smooth' } );
+		} ) );
+	}
 }() );

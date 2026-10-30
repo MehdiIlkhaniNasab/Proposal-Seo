@@ -1,6 +1,7 @@
 <?php
 /**
- * Form posts (admin-post.php) and AJAX endpoints of the admin UI.
+ * Form handlers (admin-post.php) and AJAX endpoints of the app. Every form
+ * redirects back into the app (/seo/proposal/…) with a flash message.
  *
  * @package Ostorlab
  */
@@ -8,16 +9,22 @@
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Check capability + nonce of an admin-post action.
+ * Verify nonce (POST or signed GET link) + capability, or die.
  */
 function ost_guard( $action ) {
-	if ( ! current_user_can( OST_CAP ) ) {
-		wp_die( 'دسترسی ندارید.' );
+	$nonce = sanitize_text_field( wp_unslash( $_REQUEST['_ost_nonce'] ?? '' ) ); // phpcs:ignore WordPress.Security.NonceVerification
+	if ( ! ost_can() || ! wp_verify_nonce( $nonce, $action ) ) {
+		wp_die( 'دسترسی غیرمجاز یا صفحه منقضی شده؛ صفحه را تازه کنید.', 403 );
 	}
-	check_admin_referer( $action );
 }
 
-function ost_redirect( $url ) {
+/**
+ * Redirect back into the app with a flash message.
+ */
+function ost_back( $url, $msg = '', $ok = true ) {
+	if ( '' !== $msg ) {
+		$url = add_query_arg( array( 'ost_msg' => rawurlencode( $msg ), 'ost_ok' => $ok ? 1 : 0 ), $url );
+	}
 	wp_safe_redirect( $url );
 	exit;
 }
@@ -29,41 +36,64 @@ function ost_post( $key, $default = '' ) {
 	return isset( $_POST[ $key ] ) ? wp_unslash( $_POST[ $key ] ) : $default; // phpcs:ignore WordPress.Security
 }
 
+/**
+ * Return URL posted by the form (same site only).
+ */
+function ost_return_url( $fallback ) {
+	$r = (string) ost_post( '_return' );
+	return $r ? wp_validate_redirect( $r, $fallback ) : $fallback;
+}
+
+/**
+ * Id from POST or a signed GET link.
+ */
+function ost_req_id() {
+	return absint( $_REQUEST['id'] ?? 0 ); // phpcs:ignore WordPress.Security.NonceVerification
+}
+
 // Create / edit a proposal.
 add_action( 'admin_post_ost_save_proposal', function () {
 	ost_guard( 'ost_save_proposal' );
 	$in = (array) ost_post( 'in', array() );
+	$old = (int) ost_post( 'id', 0 );
 	if ( count( ost_list( $in['keywords'] ?? '' ) ) < 1 ) {
-		ost_notice( 'دست‌کم یک کلمه کلیدی وارد کنید (پیشنهاد: ۵ تا ۷ کلمه).', 'err' );
-		ost_redirect( wp_get_referer() );
+		ost_back( $old ? ost_proposal_url( $old, 'edit' ) : ost_url( 'new' ), 'دست‌کم یک کلمه کلیدی وارد کنید (پیشنهاد: ۵ تا ۷ کلمه).', false );
 	}
-	$id = ost_save_proposal( (int) ost_post( 'id', 0 ), $in );
-	ost_notice( 'ذخیره شد. حالا «شروع تحلیل» را بزنید.' );
-	ost_redirect( ost_admin_url( 'proposal', array( 'id' => $id, 'tab' => 'summary', 'autorun' => ost_post( 'run' ) ? 1 : 0 ) ) );
+	$id = ost_save_proposal( $old, $in );
+	if ( ! $old ) {
+		ost_log( $id, 'پروپوزال ساخته شد' );
+	}
+	ost_back( ost_proposal_url( $id, 'summary', ost_post( 'run' ) ? array( 'autorun' => 1 ) : array() ), ost_post( 'run' ) ? '' : 'ذخیره شد. حالا «شروع تحلیل» را بزنید.' );
 } );
 
 add_action( 'admin_post_ost_delete', function () {
 	ost_guard( 'ost_delete' );
-	ost_delete_proposal( (int) ( $_GET['id'] ?? 0 ) ); // phpcs:ignore WordPress.Security.NonceVerification
-	ost_notice( 'پروپوزال حذف شد.' );
-	ost_redirect( ost_admin_url() );
+	ost_delete_proposal( ost_req_id() );
+	ost_back( ost_url(), 'پروپوزال حذف شد.' );
 } );
 
 add_action( 'admin_post_ost_duplicate', function () {
 	ost_guard( 'ost_duplicate' );
-	$id = ost_duplicate_proposal( (int) ( $_GET['id'] ?? 0 ) ); // phpcs:ignore WordPress.Security.NonceVerification
-	ost_notice( 'کپی ساخته شد؛ نام کارفرما، دامنه و رقبا را اصلاح کنید.' );
-	ost_redirect( ost_admin_url( 'edit', array( 'id' => $id ) ) );
+	$id = ost_duplicate_proposal( ost_req_id() );
+	ost_log( $id, 'ساخته‌شده از روی کپی یک پروپوزال دیگر' );
+	ost_back( ost_proposal_url( $id, 'edit' ), 'کپی ساخته شد؛ نام کارفرما، دامنه و رقبا را اصلاح کنید.' );
 } );
 
 add_action( 'admin_post_ost_status', function () {
 	ost_guard( 'ost_status' );
-	$id = (int) ( $_GET['id'] ?? 0 ); // phpcs:ignore WordPress.Security.NonceVerification
-	$st = sanitize_key( $_GET['status'] ?? '' ); // phpcs:ignore WordPress.Security.NonceVerification
-	if ( ost_proposal( $id ) && in_array( $st, array( 'ready', 'sent', 'won', 'lost' ), true ) ) {
-		update_post_meta( $id, '_ost_status', $st );
+	$id = ost_req_id();
+	$st = sanitize_key( $_REQUEST['status'] ?? '' ); // phpcs:ignore WordPress.Security.NonceVerification
+	if ( ost_proposal( $id ) && in_array( $st, ost_sales_statuses(), true ) ) {
+		$reason = 'lost' === $st ? sanitize_key( ost_post( 'reason' ) ) : '';
+		if ( $reason ) {
+			update_post_meta( $id, '_ost_lost_reason', $reason );
+		}
+		ost_set_status( $id, $st, trim( ( $reason ? ost_lost_reasons()[ $reason ] ?? '' : '' ) . ' ' . sanitize_text_field( (string) ost_post( 'note' ) ) ) );
+		if ( in_array( $st, array( 'won', 'lost' ), true ) ) {
+			delete_post_meta( $id, '_ost_followup' );
+		}
 	}
-	ost_redirect( wp_get_referer() ?: ost_admin_url() );
+	ost_back( ost_return_url( ost_proposal_url( $id ) ), 'وضعیت به‌روز شد.' );
 } );
 
 // Costs tab: overrides of quantities, fees, prices and the selected package.
@@ -91,6 +121,7 @@ add_action( 'admin_post_ost_save_budget', function () {
 		$out = array( 'selected' => $out['selected'] );
 	}
 	update_post_meta( $id, '_ost_budget', $out );
+	ost_log( $id, 'هزینه‌ها ویرایش شد' );
 	$months = (int) ost_to_number( ost_post( 'months' ) );
 	if ( $months ) {
 		$p                     = ost_proposal( $id );
@@ -98,8 +129,34 @@ add_action( 'admin_post_ost_save_budget', function () {
 		ost_save_proposal( $id, $p['inputs'] );
 	}
 	ost_compute( $id );
-	ost_notice( 'هزینه‌ها و نقشه راه به‌روز شد.' );
-	ost_redirect( ost_admin_url( 'proposal', array( 'id' => $id, 'tab' => 'costs' ) ) );
+	ost_back( ost_proposal_url( $id, 'costs' ), 'هزینه‌ها و نقشه راه به‌روز شد.' );
+} );
+
+// Follow-up date and note.
+add_action( 'admin_post_ost_followup', function () {
+	ost_guard( 'ost_followup' );
+	$id   = ost_req_id();
+	$days = (int) ost_post( 'days' );
+	$date = $days ? gmdate( 'Y-m-d', current_time( 'timestamp' ) + $days * DAY_IN_SECONDS ) : sanitize_text_field( (string) ost_post( 'date' ) ); // phpcs:ignore
+	if ( ost_post( 'clear' ) || ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $date ) ) {
+		delete_post_meta( $id, '_ost_followup' );
+		ost_back( ost_return_url( ost_proposal_url( $id, 'activity' ) ), 'پیگیری حذف شد.' );
+	}
+	$note = sanitize_text_field( (string) ost_post( 'note' ) );
+	update_post_meta( $id, '_ost_followup', array( 'date' => $date, 'note' => $note ) );
+	ost_log( $id, 'پیگیری برای ' . ost_jdate_ymd( $date ) . ( $note ? ': ' . $note : '' ) );
+	ost_back( ost_return_url( ost_proposal_url( $id, 'activity' ) ), 'یادآور پیگیری ثبت شد.' );
+} );
+
+// Note on the activity log (calls, meetings, client feedback).
+add_action( 'admin_post_ost_note', function () {
+	ost_guard( 'ost_note' );
+	$id   = ost_req_id();
+	$text = sanitize_textarea_field( (string) ost_post( 'text' ) );
+	if ( '' !== trim( $text ) ) {
+		ost_log( $id, $text, sanitize_key( ost_post( 'type', 'note' ) ) ?: 'note' );
+	}
+	ost_back( ost_proposal_url( $id, 'activity' ), 'یادداشت ثبت شد.' );
 } );
 
 // Strategy tab: pinned and excluded opportunities.
@@ -110,8 +167,7 @@ add_action( 'admin_post_ost_save_strategy', function () {
 	$off   = array_map( 'sanitize_text_field', (array) ost_post( 'off', array() ) );
 	update_post_meta( $id, '_ost_strategy', ost_post( 'reset' ) ? array() : array( 'picks' => $picks, 'off' => array_values( array_diff( $off, $picks ) ) ) );
 	ost_compute( $id );
-	ost_notice( 'استراتژی شروع به‌روز شد.' );
-	ost_redirect( ost_admin_url( 'proposal', array( 'id' => $id, 'tab' => 'strategy' ) ) );
+	ost_back( ost_proposal_url( $id, 'strategy' ), 'استراتژی شروع به‌روز شد.' );
 } );
 
 // Texts tab.
@@ -126,8 +182,7 @@ add_action( 'admin_post_ost_save_texts', function () {
 		$texts = array();
 	}
 	update_post_meta( $id, '_ost_texts', $texts );
-	ost_notice( ost_post( 'reset' ) ? 'متن‌ها به نسخه خودکار برگشت.' : 'متن‌ها ذخیره شد.' );
-	ost_redirect( ost_admin_url( 'proposal', array( 'id' => $id, 'tab' => 'texts' ) ) );
+	ost_back( ost_proposal_url( $id, 'texts' ), ost_post( 'reset' ) ? 'متن‌ها به نسخه خودکار برگشت.' : 'متن‌ها ذخیره شد.' );
 } );
 
 // Export tab: slides on/off and web sharing.
@@ -138,9 +193,12 @@ add_action( 'admin_post_ost_save_slides', function () {
 	$on  = array_map( 'sanitize_key', (array) ost_post( 'slides', array() ) );
 	$all = array_keys( ost_deck_slides( $p, ost_data( $id, 'analysis' ) ) );
 	update_post_meta( $id, '_ost_slides', array( 'off' => array_values( array_diff( $all, $on ) ) ) );
+	$was = (bool) get_post_meta( $id, '_ost_shared', true );
 	update_post_meta( $id, '_ost_shared', ost_post( 'shared' ) ? 1 : 0 );
-	ost_notice( 'تنظیمات خروجی ذخیره شد.' );
-	ost_redirect( ost_admin_url( 'proposal', array( 'id' => $id, 'tab' => 'export' ) ) );
+	if ( ! $was && ost_post( 'shared' ) ) {
+		ost_log( $id, 'لینک وب پروپوزال برای کارفرما فعال شد' );
+	}
+	ost_back( ost_proposal_url( $id, 'export' ), 'تنظیمات خروجی ذخیره شد.' );
 } );
 
 // Manual Screaming Frog upload (several files at once).
@@ -163,14 +221,13 @@ add_action( 'admin_post_ost_sf_upload', function () {
 		}
 	}
 	ost_compute( $id );
-	ost_notice( $errors ? implode( ' | ', $errors ) : sprintf( '%s فایل برای %s وارد شد (%s).', ost_num( count( $done ) ), $domain, implode( '، ', $done ) ), $errors ? 'err' : 'ok' );
-	ost_redirect( ost_admin_url( 'proposal', array( 'id' => $id, 'tab' => 'technical' ) ) );
+	ost_back( ost_proposal_url( $id, 'technical' ), $errors ? implode( ' | ', $errors ) : sprintf( '%s فایل برای %s وارد شد (%s).', ost_num( count( $done ) ), $domain, implode( '، ', $done ) ), ! $errors );
 } );
 
 // Screaming Frog agent script download.
 add_action( 'admin_post_ost_agent', function () {
 	ost_guard( 'ost_agent' );
-	$p  = ost_proposal( (int) ( $_GET['id'] ?? 0 ) ); // phpcs:ignore WordPress.Security.NonceVerification
+	$p  = ost_proposal( ost_req_id() );
 	$os = 'win' === ( $_GET['os'] ?? '' ) ? 'win' : 'sh'; // phpcs:ignore WordPress.Security.NonceVerification
 	if ( ! $p ) {
 		wp_die( 'پروپوزال پیدا نشد.' );
@@ -180,30 +237,6 @@ add_action( 'admin_post_ost_agent', function () {
 	header( 'Content-Type: text/plain; charset=utf-8' );
 	header( 'Content-Disposition: attachment; filename="' . $name . '"' );
 	echo ost_sf_agent_script( $p, $os ); // phpcs:ignore WordPress.Security.EscapeOutput
-	exit;
-} );
-
-// PDF export.
-add_action( 'admin_post_ost_pdf', function () {
-	ost_guard( 'ost_pdf' );
-	$id = (int) ( $_GET['id'] ?? 0 ); // phpcs:ignore WordPress.Security.NonceVerification
-	$p  = ost_proposal( $id );
-	if ( ! $p || ! ost_data( $id, 'analysis' ) ) {
-		wp_die( 'اول تحلیل را اجرا کنید.' );
-	}
-	if ( 'gotenberg' === ost_setting( 'pdf_service' ) && empty( $_GET['browser'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
-		$pdf = ost_pdf_gotenberg( $id );
-		if ( ! is_wp_error( $pdf ) ) {
-			nocache_headers();
-			header( 'Content-Type: application/pdf' );
-			header( 'Content-Disposition: attachment; filename="' . ost_pdf_filename( $p ) . '"' );
-			echo $pdf; // phpcs:ignore WordPress.Security.EscapeOutput
-			exit;
-		}
-		ost_notice( $pdf->get_error_message() . ' — از خروجی مرورگر استفاده شد.', 'err' );
-	}
-	nocache_headers();
-	echo ost_deck_html( $id, array( 'print' => empty( $_GET['preview'] ), 'web' => ! empty( $_GET['preview'] ) ) ); // phpcs:ignore
 	exit;
 } );
 
@@ -239,10 +272,21 @@ add_action( 'admin_post_ost_save_settings', function () {
 			$changes[ $flag ] = empty( $raw[ $flag ] ) ? 0 : 1;
 		}
 	}
+	// Logo / presenter photo uploaded as files.
+	foreach ( array( 'agency_logo' => 'logo_file', 'consultant_photo' => 'photo_file' ) as $key => $field ) {
+		if ( ! empty( $_FILES[ $field ]['tmp_name'] ) ) { // phpcs:ignore WordPress.Security
+			require_once ABSPATH . 'wp-admin/includes/file.php';
+			require_once ABSPATH . 'wp-admin/includes/media.php';
+			require_once ABSPATH . 'wp-admin/includes/image.php';
+			$att = media_handle_upload( $field, 0 );
+			if ( ! is_wp_error( $att ) ) {
+				$changes[ $key ] = wp_get_attachment_url( $att );
+			}
+		}
+	}
 	ost_update_settings( $changes );
 	delete_transient( 'ost_google_token' );
-	ost_notice( 'تنظیمات ذخیره شد.' );
-	ost_redirect( add_query_arg( 'tab', sanitize_key( ost_post( 'tab', 'connections' ) ), ost_admin_url( 'settings' ) ) );
+	ost_back( ost_url( 'settings/' . sanitize_key( ost_post( 'tab', 'connections' ) ) ), 'تنظیمات ذخیره شد.' );
 } );
 
 /**

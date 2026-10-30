@@ -4,6 +4,7 @@
  *
  * @var array  $p
  * @var string $tab
+ * @var array  $tabs
  * @package Ostorlab
  */
 
@@ -14,22 +15,11 @@ $in   = $p['inputs'];
 $a    = ost_data( $id, 'analysis' );
 $st   = ost_status_label( $p['status'] );
 $job  = (array) $p['job'];
-$tabs = array(
-	'summary'     => array( 'خلاصه و اجرا', 'play' ),
-	'market'      => array( 'بازار و کلمات', 'search' ),
-	'competitors' => array( 'رقبا', 'users' ),
-	'strategy'    => array( 'استراتژی شروع', 'target' ),
-	'offpage'     => array( 'آف‌پیج', 'link' ),
-	'technical'   => array( 'تکنیکال', 'tool' ),
-	'costs'       => array( 'هزینه و نقشه راه', 'wallet' ),
-	'texts'       => array( 'متن‌ها', 'text' ),
-	'export'      => array( 'خروجی PDF', 'download' ),
-);
 if ( ! isset( $tabs[ $tab ] ) ) {
 	$tab = 'summary';
 }
 $url  = function ( $t ) use ( $id ) {
-	return ost_admin_url( 'proposal', array( 'id' => $id, 'tab' => $t ) );
+	return ost_proposal_url( $id, $t );
 };
 $need = function () use ( $a, $url ) {
 	if ( ! $a ) {
@@ -38,29 +28,71 @@ $need = function () use ( $a, $url ) {
 	}
 	return false;
 };
-$cd = $a['client_domain'] ?? '';
+$cd     = $a['client_domain'] ?? '';
+$val    = ost_value( $id );
+$views  = ost_views( $id );
+$fu     = ost_followup( $id );
+$shared = (bool) get_post_meta( $id, '_ost_shared', true );
+$today  = gmdate( 'Y-m-d', current_time( 'timestamp' ) ); // phpcs:ignore
+$here   = ost_proposal_url( $id, $tab );
 ?>
-<div class="ost-bar">
+<header class="ost-head">
 	<div>
+		<p class="ost-crumb"><a href="<?php echo esc_url( ost_url() ); ?>">پروپوزال‌ها</a> / <span dir="ltr"><?php echo esc_html( ost_presenter( $p )['number'] ); ?></span></p>
 		<h1><?php echo esc_html( $p['title'] ); ?> <span class="ost-pill <?php echo esc_attr( $st[1] ); ?>"><?php echo esc_html( $st[0] ); ?></span></h1>
-		<p class="ost-muted"><?php echo esc_html( $in['domain'] ?: 'بدون سایت' ); ?> · <?php echo esc_html( ost_business_types()[ $in['business_type'] ] ); ?> · دوره <?php echo esc_html( ost_num( $in['months'] ) ); ?> ماه</p>
+		<p class="ost-meta">
+			<span><?php echo esc_html( $in['domain'] ?: 'بدون سایت' ); ?></span>
+			<span><?php echo esc_html( ost_business_types()[ $in['business_type'] ] ); ?></span>
+			<span>دوره <?php echo esc_html( ost_num( $in['months'] ) ); ?> ماه</span>
+			<?php if ( $val['total'] ) : ?><span>پکیج <?php echo esc_html( $val['package'] ); ?>: <b><?php echo esc_html( ost_toman( $val['total'], true ) ); ?></b></span><?php endif; ?>
+			<?php if ( $views['count'] ) : ?><span class="is-good"><?php echo ost_icon( 'eye', 14 ); // phpcs:ignore ?> کارفرما <?php echo esc_html( ost_num( $views['count'] ) ); ?> بار دیده · <?php echo esc_html( ost_ago( $views['last'] ) ); ?></span><?php endif; ?>
+			<?php if ( $fu['date'] ) : ?><span class="<?php echo $fu['date'] <= $today ? 'is-due' : ''; ?>"><?php echo ost_icon( 'clock', 14 ); // phpcs:ignore ?> پیگیری <?php echo esc_html( ost_jdate_ymd( $fu['date'] ) ); ?></span><?php endif; ?>
+		</p>
 	</div>
-	<div class="ost-bar-act">
-		<a class="ost-btn" href="<?php echo esc_url( ost_admin_url( 'edit', array( 'id' => $id ) ) ); ?>">ویرایش ورودی‌ها</a>
+	<div class="ost-head-act">
 		<?php if ( $a ) : ?>
-			<a class="ost-btn" target="_blank" href="<?php echo esc_url( ost_action_url( 'ost_pdf', array( 'id' => $id, 'preview' => 1 ) ) ); ?>"><?php echo ost_icon( 'eye', 16 ); // phpcs:ignore ?> پیش‌نمایش</a>
-			<a class="ost-btn primary" target="_blank" href="<?php echo esc_url( ost_action_url( 'ost_pdf', array( 'id' => $id ) ) ); ?>"><?php echo ost_icon( 'download', 16 ); // phpcs:ignore ?> دانلود PDF</a>
+			<a class="ost-btn" target="_blank" href="<?php echo esc_url( ost_url( 'proposal/' . $id . '/deck' ) ); ?>"><?php echo ost_icon( 'eye', 16 ); // phpcs:ignore ?> پیش‌نمایش</a>
+			<a class="ost-btn primary" target="_blank" href="<?php echo esc_url( ost_url( 'proposal/' . $id . '/pdf' ) ); ?>"><?php echo ost_icon( 'download', 16 ); // phpcs:ignore ?> دانلود PDF</a>
 		<?php endif; ?>
+		<details class="ost-menu">
+			<summary class="ost-btn" aria-label="بیشتر">⋯</summary>
+			<div>
+				<a href="<?php echo esc_url( ost_proposal_url( $id, 'edit' ) ); ?>"><?php echo ost_icon( 'text', 16 ); // phpcs:ignore ?> ویرایش ورودی‌ها</a>
+				<a href="<?php echo esc_url( ost_action_url( 'ost_duplicate', array( 'id' => $id ) ) ); ?>"><?php echo ost_icon( 'copy', 16 ); // phpcs:ignore ?> کپی برای کارفرمای دیگر</a>
+				<a class="is-danger" href="<?php echo esc_url( ost_action_url( 'ost_delete', array( 'id' => $id ) ) ); ?>" data-confirm="این پروپوزال و همه داده‌هایش حذف شود؟"><?php echo ost_icon( 'trash', 16 ); // phpcs:ignore ?> حذف</a>
+			</div>
+		</details>
 	</div>
-</div>
+</header>
+
+<form class="ost-salesbar" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+	<?php ost_form_fields( 'ost_status', $here ); ?><input type="hidden" name="id" value="<?php echo (int) $id; ?>">
+	<span class="ost-muted">مرحله فروش:</span>
+	<div class="ost-stages">
+		<?php foreach ( ost_sales_statuses() as $k ) : $sl = ost_status_label( $k ); ?>
+			<button name="status" value="<?php echo esc_attr( $k ); ?>" class="<?php echo $p['status'] === $k ? 'on c-' . esc_attr( $sl[1] ) : ''; ?>" <?php echo 'lost' === $k ? 'data-lost="1"' : ''; ?>><?php echo esc_html( $sl[0] ); ?></button>
+		<?php endforeach; ?>
+	</div>
+	<select name="reason" class="ost-lost-reason" hidden><?php foreach ( ost_lost_reasons() as $k => $l ) { echo '<option value="' . esc_attr( $k ) . '">' . esc_html( $l ) . '</option>'; } ?></select>
+	<?php if ( $shared ) : ?><button type="button" class="ost-btn sm ghost" data-copy="<?php echo esc_url( ost_share_url( $p ) ); ?>"><?php echo ost_icon( 'link', 14 ); // phpcs:ignore ?> کپی لینک کارفرما</button><?php endif; ?>
+</form>
 
 <nav class="ost-tabs">
 	<?php foreach ( $tabs as $k => $t ) : ?>
-		<a href="<?php echo esc_url( $url( $k ) ); ?>" class="<?php echo $tab === $k ? 'on' : ''; ?>"><?php echo ost_icon( $t[1], 16 ); // phpcs:ignore ?><?php echo esc_html( $t[0] ); ?></a>
+		<a href="<?php echo esc_url( $url( $k ) ); ?>" class="<?php echo $tab === $k ? 'on' : ''; ?>"><?php echo ost_icon( $t[1], 16 ); // phpcs:ignore ?><?php echo esc_html( $t[0] ); ?><?php echo 'activity' === $k && $fu['date'] && $fu['date'] <= $today ? '<em>!</em>' : ''; ?></a>
 	<?php endforeach; ?>
 </nav>
 
 <?php if ( 'summary' === $tab ) : $cost = ost_ss_cost_estimate( $p ); ?>
+	<?php if ( $a ) : $pk = $a['budget']['packages'][ $a['budget']['selected'] ]; $f = $a['forecast']; ?>
+		<section class="ost-kpis">
+			<div><b><?php echo esc_html( ost_compact( $a['market']['total'] ) ); ?></b><span>جستجوی ماهانه بازار</span></div>
+			<div class="hl"><b><?php echo esc_html( ost_compact( $a['market']['buyer'] ) ); ?></b><span>جستجوی آماده خرید</span></div>
+			<div><b><?php echo esc_html( ost_num( $f['baseline'] ) ); ?></b><span>کلیک غیربرندی امروز <?php echo 'gsc' === $f['basis'] ? '(سرچ کنسول)' : '(تخمین)'; ?></span></div>
+			<div><b><?php echo esc_html( ost_num( $f['scenarios']['low'] ) . ' تا ' . ost_num( $f['scenarios']['high'] ) ); ?></b><span>کلیک ماهانه پایان دوره</span></div>
+			<div><b><?php echo esc_html( ost_compact( $pk['monthly'] ) ); ?></b><span>تومان در ماه (پکیج <?php echo esc_html( $pk['label'] ); ?>)</span></div>
+		</section>
+	<?php endif; ?>
 	<div class="ost-grid g-side">
 		<section class="ost-panel">
 			<h2>اجرای تحلیل</h2>
@@ -93,14 +125,7 @@ $cd = $a['client_domain'] ?? '';
 			</ul>
 		</aside>
 	</div>
-	<?php if ( $a ) : $pk = $a['budget']['packages'][ $a['budget']['selected'] ]; $f = $a['forecast']; ?>
-		<section class="ost-kpis">
-			<div><b><?php echo esc_html( ost_compact( $a['market']['total'] ) ); ?></b><span>جستجوی ماهانه بازار</span></div>
-			<div class="hl"><b><?php echo esc_html( ost_compact( $a['market']['buyer'] ) ); ?></b><span>جستجوی آماده خرید</span></div>
-			<div><b><?php echo esc_html( ost_num( $f['baseline'] ) ); ?></b><span>کلیک غیربرندی امروز <?php echo 'gsc' === $f['basis'] ? '(سرچ کنسول)' : '(تخمین)'; ?></span></div>
-			<div><b><?php echo esc_html( ost_num( $f['scenarios']['low'] ) . ' تا ' . ost_num( $f['scenarios']['high'] ) ); ?></b><span>کلیک ماهانه پایان دوره</span></div>
-			<div><b><?php echo esc_html( ost_compact( $pk['monthly'] ) ); ?></b><span>تومان در ماه (پکیج <?php echo esc_html( $pk['label'] ); ?>)</span></div>
-		</section>
+	<?php if ( $a ) : ?>
 		<?php
 		$errs = array_filter( (array) ( $job['steps'] ?? array() ), function ( $s ) {
 			return 'error' === $s['status'];
@@ -200,8 +225,7 @@ $cd = $a['client_domain'] ?? '';
 		</section>
 	<?php endif; ?>
 	<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="ost-panel">
-		<?php wp_nonce_field( 'ost_save_strategy' ); ?>
-		<input type="hidden" name="action" value="ost_save_strategy"><input type="hidden" name="id" value="<?php echo (int) $id; ?>">
+		<?php ost_form_fields( 'ost_save_strategy' ); ?><input type="hidden" name="id" value="<?php echo (int) $id; ?>">
 		<h2>فرصت‌های شروع <small class="ost-muted">مرتب‌شده بر اساس امتیاز (تقاضا × نیت خرید × سهولت × ضعف رقبا × جایگاه فعلی شما)</small></h2>
 		<p class="ost-muted">۵ فرصت اول خودکار در پروپوزال می‌آید. با «سنجاق» ترتیب و انتخاب را خودتان تعیین کنید (حداکثر ۵)، با «حذف» فرصتی را کنار بگذارید.</p>
 		<table class="ost-table">
@@ -281,8 +305,7 @@ $cd = $a['client_domain'] ?? '';
 		<pre class="ost-code" dir="ltr">powershell -ExecutionPolicy Bypass -File ostorlab-sf-<?php echo esc_html( $in['domain'] ?: 'proposal-' . $id ); ?>.ps1</pre>
 		<details><summary>آپلود دستی خروجی‌ها</summary>
 			<form method="post" enctype="multipart/form-data" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="ost-row">
-				<?php wp_nonce_field( 'ost_sf_upload' ); ?>
-				<input type="hidden" name="action" value="ost_sf_upload"><input type="hidden" name="id" value="<?php echo (int) $id; ?>">
+				<?php ost_form_fields( 'ost_sf_upload' ); ?><input type="hidden" name="id" value="<?php echo (int) $id; ?>">
 				<select name="domain"><?php foreach ( ost_domains( $p ) as $d => $r ) { echo '<option>' . esc_html( $d ) . '</option>'; } ?></select>
 				<input type="file" name="files[]" multiple accept=".csv,.gz">
 				<button class="ost-btn">آپلود</button>
@@ -307,8 +330,7 @@ $cd = $a['client_domain'] ?? '';
 
 <?php elseif ( 'costs' === $tab ) : if ( ! $need() ) : $b = $a['budget']; $ov = (array) $p['budget']; $items = ost_budget_items(); ?>
 	<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="ost-panel">
-		<?php wp_nonce_field( 'ost_save_budget' ); ?>
-		<input type="hidden" name="action" value="ost_save_budget"><input type="hidden" name="id" value="<?php echo (int) $id; ?>">
+		<?php ost_form_fields( 'ost_save_budget' ); ?><input type="hidden" name="id" value="<?php echo (int) $id; ?>">
 		<h2>محاسبه هزینه‌ها</h2>
 		<p class="ost-muted">تعدادها از تحلیل رقبا پیشنهاد شده‌اند (دلیل هرکدام زیر جدول). هر خانه را می‌توانید تغییر دهید؛ خانه خالی = عدد پیشنهادی. بودجه محتوا و آف‌پیج مستقیم توسط کارفرما پرداخت می‌شود.</p>
 		<div class="ost-row">
@@ -357,8 +379,7 @@ $cd = $a['client_domain'] ?? '';
 
 <?php elseif ( 'texts' === $tab ) : if ( ! $need() ) : $t = ost_texts( $p, $a ); ?>
 	<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="ost-panel">
-		<?php wp_nonce_field( 'ost_save_texts' ); ?>
-		<input type="hidden" name="action" value="ost_save_texts"><input type="hidden" name="id" value="<?php echo (int) $id; ?>">
+		<?php ost_form_fields( 'ost_save_texts' ); ?><input type="hidden" name="id" value="<?php echo (int) $id; ?>">
 		<div class="ost-row between">
 			<h2>متن‌های پروپوزال</h2>
 			<?php if ( ost_ai_connected() ) : ?><button type="button" class="ost-btn" id="ost-ai-texts" data-id="<?php echo (int) $id; ?>"><?php echo ost_icon( 'spark', 16 ); // phpcs:ignore ?> بازنویسی با هوش مصنوعی</button><?php endif; ?>
@@ -371,11 +392,10 @@ $cd = $a['client_domain'] ?? '';
 	</form>
 <?php endif; ?>
 
-<?php elseif ( 'export' === $tab ) : if ( ! $need() ) : $all = ost_deck_slides( $p, $a ); $off = array_flip( (array) ( $p['slides']['off'] ?? array() ) ); $shared = (bool) get_post_meta( $id, '_ost_shared', true ); $link = add_query_arg( array( 'ostorlab_deck' => $id, 't' => $p['token'] ), home_url( '/' ) ); ?>
+<?php elseif ( 'export' === $tab ) : if ( ! $need() ) : $all = ost_deck_slides( $p, $a ); $off = array_flip( (array) ( $p['slides']['off'] ?? array() ) ); $link = ost_share_url( $p ); ?>
 	<div class="ost-grid g-side">
 		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="ost-panel">
-			<?php wp_nonce_field( 'ost_save_slides' ); ?>
-			<input type="hidden" name="action" value="ost_save_slides"><input type="hidden" name="id" value="<?php echo (int) $id; ?>">
+			<?php ost_form_fields( 'ost_save_slides' ); ?><input type="hidden" name="id" value="<?php echo (int) $id; ?>">
 			<h2>اسلایدهای پروپوزال</h2>
 			<div class="ost-slides">
 				<?php $n = 0; foreach ( $all as $k => $label ) : $n++; ?>
@@ -387,17 +407,66 @@ $cd = $a['client_domain'] ?? '';
 		</form>
 		<aside class="ost-panel">
 			<h2>خروجی</h2>
-			<p><a class="ost-btn primary lg block" target="_blank" href="<?php echo esc_url( ost_action_url( 'ost_pdf', array( 'id' => $id ) ) ); ?>"><?php echo ost_icon( 'download' ); // phpcs:ignore ?> دانلود PDF اسلایدی</a></p>
+			<p><a class="ost-btn primary lg block" target="_blank" href="<?php echo esc_url( ost_url( 'proposal/' . $id . '/pdf' ) ); ?>"><?php echo ost_icon( 'download' ); // phpcs:ignore ?> دانلود PDF اسلایدی</a></p>
 			<p class="ost-muted"><?php echo 'gotenberg' === ost_setting( 'pdf_service' ) ? 'PDF روی سرور ساخته و مستقیم دانلود می‌شود.' : 'پنجره چاپ مرورگر باز می‌شود؛ مقصد را «Save as PDF» بگذارید (اندازه و حاشیه‌ها خودکار تنظیم است؛ تیک Background graphics روشن باشد).'; ?></p>
-			<p><a class="ost-btn block" target="_blank" href="<?php echo esc_url( ost_action_url( 'ost_pdf', array( 'id' => $id, 'preview' => 1 ) ) ); ?>"><?php echo ost_icon( 'eye', 16 ); // phpcs:ignore ?> پیش‌نمایش اسلایدها</a></p>
+			<p><a class="ost-btn block" target="_blank" href="<?php echo esc_url( ost_url( 'proposal/' . $id . '/deck' ) ); ?>"><?php echo ost_icon( 'eye', 16 ); // phpcs:ignore ?> پیش‌نمایش اسلایدها</a></p>
 			<?php if ( $shared ) : ?>
-				<label>لینک نسخه وب برای کارفرما<input type="text" dir="ltr" readonly value="<?php echo esc_url( $link ); ?>" onclick="this.select()"></label>
+				<label>لینک نسخه وب برای کارفرما<span class="ost-copy"><input type="text" dir="ltr" readonly value="<?php echo esc_url( $link ); ?>"><button type="button" class="ost-btn sm" data-copy="<?php echo esc_url( $link ); ?>">کپی</button></span><small>هر بار که کارفرما لینک را باز کند، در تب «پیگیری» ثبت می‌شود.</small></label>
 			<?php endif; ?>
-			<h3>وضعیت پروپوزال</h3>
-			<div class="ost-row">
-				<?php foreach ( array( 'sent' => 'ارسال شد', 'won' => 'قرارداد بسته شد', 'lost' => 'رد شد' ) as $k => $l ) { echo '<a class="ost-btn ghost sm" href="' . esc_url( ost_action_url( 'ost_status', array( 'id' => $id, 'status' => $k ) ) ) . '">' . esc_html( $l ) . '</a>'; } ?>
-			</div>
+			<?php if ( $shared ) : ?><p class="ost-muted">بازدید کارفرما: <?php echo $views['count'] ? esc_html( ost_num( $views['count'] ) . ' بار، آخرین بار ' . ost_ago( $views['last'] ) ) : 'هنوز باز نشده'; ?></p><?php endif; ?>
 		</aside>
 	</div>
 <?php endif; ?>
+
+<?php elseif ( 'activity' === $tab ) : $log = ost_log_entries( $id ); ?>
+	<div class="ost-grid g-side">
+		<section class="ost-panel">
+			<h2>تاریخچه و یادداشت‌ها</h2>
+			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="ost-note-form">
+				<?php ost_form_fields( 'ost_note' ); ?><input type="hidden" name="id" value="<?php echo (int) $id; ?>">
+				<textarea name="text" rows="2" placeholder="مثلاً: تماس گرفتم، کارفرما پکیج پیشنهادی را پسندید ولی درباره بودجه رپورتاژ سؤال داشت…" required></textarea>
+				<div class="ost-row">
+					<select name="type"><option value="note">یادداشت</option><option value="call">تماس تلفنی</option><option value="meeting">جلسه</option><option value="feedback">بازخورد کارفرما</option></select>
+					<button class="ost-btn primary">ثبت</button>
+				</div>
+			</form>
+			<ol class="ost-timeline">
+				<?php
+				$types = array( 'note' => 'یادداشت', 'call' => 'تماس', 'meeting' => 'جلسه', 'feedback' => 'بازخورد', 'view' => 'بازدید کارفرما', 'event' => '' );
+				foreach ( $log as $e ) :
+					$u = $e['u'] ? get_userdata( $e['u'] ) : null;
+					?>
+					<li class="t-<?php echo esc_attr( $e['type'] ?? 'event' ); ?>">
+						<b><?php echo esc_html( $types[ $e['type'] ?? 'event' ] ?? '' ); ?></b>
+						<p><?php echo nl2br( esc_html( $e['text'] ) ); ?></p>
+						<small><?php echo esc_html( ost_ago( $e['t'] ) . ( $u ? ' · ' . $u->display_name : '' ) ); ?></small>
+					</li>
+				<?php endforeach; ?>
+				<?php if ( ! $log ) : ?><li><p class="ost-muted">هنوز رویدادی ثبت نشده.</p></li><?php endif; ?>
+			</ol>
+		</section>
+		<aside>
+			<section class="ost-panel">
+				<h2>یادآور پیگیری</h2>
+				<?php if ( $fu['date'] ) : ?><p class="ost-fu <?php echo $fu['date'] <= $today ? 'is-due' : ''; ?>"><b><?php echo esc_html( ost_jdate_ymd( $fu['date'] ) ); ?></b><?php echo $fu['note'] ? '<br>' . esc_html( $fu['note'] ) : ''; ?></p><?php endif; ?>
+				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+					<?php ost_form_fields( 'ost_followup' ); ?><input type="hidden" name="id" value="<?php echo (int) $id; ?>">
+					<label>یادداشت پیگیری<input type="text" name="note" value="<?php echo esc_attr( $fu['note'] ); ?>" placeholder="مثلاً تماس برای جواب نهایی"></label>
+					<div class="ost-quick">
+						<?php foreach ( array( 1 => 'فردا', 3 => '۳ روز بعد', 7 => 'یک هفته بعد', 14 => 'دو هفته بعد' ) as $d => $l ) { echo '<button class="ost-btn sm" name="days" value="' . (int) $d . '">' . esc_html( $l ) . '</button>'; } ?>
+					</div>
+					<label>یا تاریخ دقیق<input type="date" name="date" dir="ltr" value="<?php echo esc_attr( $fu['date'] ); ?>"></label>
+					<div class="ost-row"><button class="ost-btn primary">ثبت</button><?php if ( $fu['date'] ) : ?><button class="ost-btn ghost" name="clear" value="1">حذف یادآور</button><?php endif; ?></div>
+				</form>
+			</section>
+			<section class="ost-panel">
+				<h2>بازدید کارفرما</h2>
+				<?php if ( ! $shared ) : ?>
+					<p class="ost-muted">لینک وب هنوز فعال نیست. از تب «خروجی و ارسال» فعالش کنید تا بفهمید کارفرما کی و چند بار پروپوزال را دیده است.</p>
+				<?php else : ?>
+					<p><b><?php echo esc_html( ost_num( $views['count'] ) ); ?></b> بار باز شده<?php echo $views['last'] ? '؛ آخرین بار ' . esc_html( ost_ago( $views['last'] ) ) : ''; ?>.</p>
+				<?php endif; ?>
+			</section>
+		</aside>
+	</div>
 <?php endif; ?>
