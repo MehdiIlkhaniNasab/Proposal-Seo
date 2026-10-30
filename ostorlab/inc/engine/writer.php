@@ -41,7 +41,8 @@ function ost_writer_facts( $p, $a ) {
 	$in      = $p['inputs'];
 	$cd      = $a['client_domain'] ?? '';
 	$pkg     = $a['budget']['packages'][ $a['budget']['selected'] ?? 'pro' ] ?? array();
-	$profile = function ( $d ) use ( $a ) {
+	$has_off = ost_deck_has_offpage( $a );
+	$profile = function ( $d ) use ( $a, $has_off ) {
 		$pr = $a['profiles'][ $d ] ?? array();
 		$of = $a['offpage'][ $d ] ?? array();
 		$te = $a['technical'][ $d ] ?? array();
@@ -49,12 +50,13 @@ function ost_writer_facts( $p, $a ) {
 			'domain'             => $d,
 			'ranking_keywords'   => $pr['keywords'] ?? 0,
 			'ranking_pages'      => $pr['ranking_pages'] ?? 0,
-			'site_pages'         => $pr['site_pages'] ?? 0,
+			'site_pages'         => ( $pr['site_pages'] ?? 0 ) ?: null,
 			'monthly_clicks_est' => $pr['clicks'] ?? 0,
 			'buyer_clicks_est'   => $pr['buyer_clicks'] ?? 0,
 			'market_share'       => round( 100 * ( $a['sov'][ $d ] ?? 0 ) ),
-			'quality_reportages' => $of['quality_reportages'] ?? 0,
-			'reportages_last12'  => $of['reportage']['last12'] ?? 0,
+			// Null = no data (the AI is told not to talk about it).
+			'quality_reportages' => $has_off && ! empty( $of['reportage']['available'] ) ? (int) $of['quality_reportages'] : null,
+			'reportages_last12'  => $has_off && ! empty( $of['reportage']['available'] ) ? (int) $of['reportage']['last12'] : null,
 			'tech_score'         => $te['score'] ?? null,
 			'top_tech_issues'    => array_slice( array_column( (array) ( $te['issues'] ?? array() ), 'label' ), 0, 4 ),
 			'top_pages'          => array_slice( array_column( (array) ( $pr['top_pages'] ?? array() ), 'top' ), 0, 3 ),
@@ -84,7 +86,15 @@ function ost_writer_facts( $p, $a ) {
 			}, array_slice( (array) ( $a['strategy']['picks'] ?? array() ), 0, 5 ) ),
 			'expected_clicks_90_days' => $a['strategy']['day90'] ?? null,
 		),
-		'keyword_gap'  => array( 'count' => $a['gap']['count'] ?? 0, 'top' => array_slice( array_column( (array) ( $a['gap']['top'] ?? array() ), 'w' ), 0, 8 ) ),
+		'key_keywords'    => array_map( function ( $k ) {
+			return array( 'keyword' => $k['w'], 'monthly_searches' => $k['v'], 'why' => $k['why'] );
+		}, (array) ( $a['market']['key'] ?? array() ) ),
+		'ai_keyword_note' => (string) ( $a['market']['ai_note'] ?? '' ),
+		'opportunities'   => array_map( function ( $o ) {
+			return array( 'topic' => $o['label'], 'keywords' => array_slice( array_column( $o['words'], 'w' ), 0, 4 ), 'monthly_searches' => $o['volume'], 'buyer_share_pct' => round( 100 * $o['buyer_share'] ), 'competition_ease_pct' => round( 100 * $o['ease'] ), 'competitors_in_top3' => $o['strong'], 'competitors_in_top10' => $o['in_top10'], 'client_position' => $o['client_pos'], 'months_to_result' => $o['months'], 'expected_clicks' => $o['clicks'], 'type' => ost_opp_type_label( $o['type'] ) );
+		}, array_slice( (array) ( $a['strategy']['all'] ?? array() ), 0, 15 ) ),
+		'keyword_gap'  => ! empty( $a['gap']['count'] ) ? array( 'count' => $a['gap']['count'], 'top' => array_slice( array_column( (array) ( $a['gap']['top'] ?? array() ), 'w' ), 0, 8 ) ) : null,
+		'customer_questions' => array_slice( array_column( (array) ( $a['market']['questions'] ?? array() ), 'w' ), 0, 8 ) ?: null,
 		'forecast'     => array( 'months' => $in['months'], 'baseline_clicks' => $a['forecast']['baseline'] ?? 0, 'expected_clicks_end' => array( $a['forecast']['scenarios']['low'] ?? 0, $a['forecast']['scenarios']['high'] ?? 0 ) ),
 		'plan'         => array( 'package' => $pkg['label'] ?? '', 'quantities' => $pkg['qty'] ?? array(), 'monthly_fee' => $pkg['fee'] ?? 0 ),
 		'notes'        => $in['notes'],
@@ -115,8 +125,23 @@ function ost_writer_ai( $p, $a ) {
 			'opportunities'     => $list,
 			'threats'           => $list,
 			'next_steps'        => $list,
+			'channels'          => array(
+				'type'       => 'object',
+				'properties' => array_fill_keys( array( 'google', 'instagram', 'marketplaces', 'offline', 'other' ), array( 'type' => 'object', 'properties' => array( 'share' => array( 'type' => 'number' ), 'why' => array( 'type' => 'string' ) ), 'required' => array( 'share', 'why' ) ) ),
+				'required'   => array( 'google', 'instagram', 'marketplaces', 'offline', 'other' ),
+			),
+			'channels_note'        => array( 'type' => 'string' ),
+			'main_recommendation'  => array( 'type' => 'object', 'properties' => array( 'title' => array( 'type' => 'string' ), 'text' => array( 'type' => 'string' ) ), 'required' => array( 'title', 'text' ) ),
+			'market_opportunities' => array(
+				'type'  => 'array',
+				'items' => array(
+					'type'       => 'object',
+					'properties' => array( 'title' => array( 'type' => 'string' ), 'keywords' => $list, 'angle' => array( 'type' => 'string' ), 'why' => array( 'type' => 'string' ), 'potential' => array( 'type' => 'string' ) ),
+					'required'   => array( 'title', 'keywords', 'angle', 'why', 'potential' ),
+				),
+			),
 		),
-		'required'   => array( 'headline', 'executive_summary', 'strategy', 'market', 'current_state', 'competitors', 'offpage', 'technical', 'content', 'strengths', 'weaknesses', 'opportunities', 'threats', 'next_steps' ),
+		'required'   => array( 'headline', 'executive_summary', 'strategy', 'channels', 'channels_note', 'main_recommendation', 'market_opportunities', 'market', 'current_state', 'competitors', 'offpage', 'technical', 'content', 'strengths', 'weaknesses', 'opportunities', 'threats', 'next_steps' ),
 	);
 	$system = implode( "\n", array(
 		'تو مدیر سئوی ارشد یک آژانس دیجیتال مارکتینگ ایرانی هستی و متن یک پروپوزال سئو را برای صاحب یک کسب‌وکار ایرانی می‌نویسی.',
@@ -134,12 +159,32 @@ function ost_writer_ai( $p, $a ) {
 		'- متن «strategy» قلب پروپوزال است: استراتژی شروع (entry_strategy) را طوری توضیح بده که کارفرما حس کند یک نقطه ورود هوشمندانه و مخصوص کسب‌وکار خودش پیدا شده؛ با نام دقیق ۲ تا ۳ فرصت اول، چرایی (تقاضا، رقیب ضعیف یا غایب، جایگاه فعلی خودش)، زمان نتیجه و کلیک قابل انتظار ۹۰ روز اول. لحن مطمئن ولی بدون وعده قطعی.',
 		'- در خلاصه اجرایی هم یک جمله به استراتژی شروع اشاره کن.',
 		'- اگر سایت ندارد، به‌جای ضعف سایت، از «شروع درست از صفر» و فرصت معماری صحیح بگو.',
+		'- درباره داده‌ای که صفر است یا وجود ندارد (null) اصلاً صحبت نکن؛ نه در متن‌ها و نه در نقاط قوت و ضعف.',
+		'- فقط از کلمات key_keywords و opportunities استفاده کن؛ کلمه‌ای از خودت نساز.',
+		'- channels: سهم تقاضای این نوع کسب‌وکار در ایران در هر کانال را واقع‌بینانه تخمین بزن (share به درصد، جمع ۱۰۰): google (جستجوی گوگل)، instagram (اینستاگرام و شبکه‌های اجتماعی)، marketplaces (دیجی‌کالا، ترب، باسلام و…)، offline (حضوری، معرفی، تماس)، other. برای هرکدام why یک جمله کوتاه. channels_note یک جمله که بگوید این‌ها تخمین هستند و پایه آن جستجوی گوگل است.',
+		'- market_opportunities: ۳ تا ۵ فرصت بازار را از بین opportunities و key_keywords حرفه‌ای تحلیل کن. هرکدام: title (نام فرصت)، keywords (۲ تا ۴ کلمه از همان داده)، angle یکی از «کم‌رقابت»، «زودبازده»، «سودآور»، «شکاف رقبا»، «جایگاه فعلی شما»، why (۲ جمله با عدد: تقاضا، وضعیت رقبا، جایگاه کارفرما)، potential (نتیجه قابل انتظار با بازه و زمان).',
+		'- main_recommendation: پیشنهاد اصلی و هوشمندانه تو برای شروع (title کوتاه و جذاب، text سه تا چهار جمله با دلیل‌های داده‌محور) که کارفرما حس کند مخصوص کسب‌وکار خودش است.',
 	) );
 	$user = "داده‌های تحلیل (JSON):\n" . wp_json_encode( ost_writer_facts( $p, $a ), JSON_UNESCAPED_UNICODE );
-	$res  = ost_ai_request( $system, $user, $schema, 'analysis', 6000 );
+	$res  = ost_ai_request( $system, $user, $schema, 'analysis', 10000 );
 	if ( is_wp_error( $res ) ) {
 		return $res;
 	}
+	// Structured parts (channels, opportunities, main recommendation) are stored apart from the texts.
+	update_post_meta( $p['id'], '_ost_ai_market', array(
+		'channels'             => (array) ( $res['channels'] ?? array() ),
+		'channels_note'        => sanitize_text_field( (string) ( $res['channels_note'] ?? '' ) ),
+		'main_recommendation'  => array_map( 'sanitize_textarea_field', array_map( 'strval', (array) ( $res['main_recommendation'] ?? array() ) ) ),
+		'market_opportunities' => array_map( function ( $o ) {
+			return array(
+				'title'     => sanitize_text_field( (string) ( $o['title'] ?? '' ) ),
+				'keywords'  => array_map( 'sanitize_text_field', array_map( 'strval', (array) ( $o['keywords'] ?? array() ) ) ),
+				'angle'     => sanitize_text_field( (string) ( $o['angle'] ?? '' ) ),
+				'why'       => sanitize_textarea_field( (string) ( $o['why'] ?? '' ) ),
+				'potential' => sanitize_text_field( (string) ( $o['potential'] ?? '' ) ),
+			);
+		}, array_slice( (array) ( $res['market_opportunities'] ?? array() ), 0, 5 ) ),
+	) );
 	foreach ( array( 'strengths', 'weaknesses', 'opportunities', 'threats', 'next_steps' ) as $k ) {
 		$res[ $k ] = implode( "\n", array_map( 'strval', (array) ( $res[ $k ] ?? array() ) ) );
 	}
@@ -197,18 +242,25 @@ function ost_writer_fallback( $p, $a ) {
 		);
 	}
 	$t['market'] = sprintf( 'بیشترین تقاضا در خوشه‌های %s است. حدود %s از جستجوها نیت خرید، مقایسه یا مراجعه دارند؛ تمرکز ما روی همین جستجوهاست که مشتری می‌آورند.', implode( '، ', $top_cl ), ost_pct( ( $m['buyer'] ?? 0 ) / max( 1, $m['total'] ?? 1 ) ) );
+	if ( ! empty( $a['channels']['channels']['google'] ) ) {
+		$t['market'] .= sprintf( ' برآورد ما: حدود %s از کل تقاضای این بازار در گوگل اتفاق می‌افتد.', ost_pct( $a['channels']['channels']['google']['share'] ) );
+	}
 	$t['current_state'] = $cd
 		? ( ! empty( $a['gsc']['totals'] )
 			? sprintf( 'طبق سرچ کنسول، سایت در ۳ ماه گذشته %s کلیک و %s نمایش در گوگل داشته؛ %s از کلیک‌ها برندی است (کسانی که نام شما را می‌دانند).', ost_num( $a['gsc']['totals']['clicks'] ), ost_num( $a['gsc']['totals']['impressions'] ), ost_pct( ( $a['gsc']['brand']['brand'] ?? 0 ) / max( 1, $a['gsc']['totals']['clicks'] ) ) )
 			: sprintf( 'سایت شما برای حدود %s کلمه در گوگل دیده می‌شود و تخمین ما حدود %s کلیک ماهانه از گوگل است. %s صفحه از سایت در نتایج رتبه دارد.', ost_num( $client['keywords'] ?? 0 ), ost_num( $client['clicks'] ?? 0 ), ost_num( $client['ranking_pages'] ?? 0 ) ) )
 		: 'سایت هنوز راه‌اندازی نشده است؛ بنابراین رقبا مبنای مقایسه هستند و از روز اول ساختار درست را پیاده می‌کنیم.';
 	$t['competitors'] = $leader ? sprintf( '%s با تخمین %s کلیک ماهانه پیشتاز این بازار است. رقبا به‌طور میانگین با %s صفحه در گوگل رتبه دارند. این عددها تخمینی‌اند ولی نشان می‌دهند این سهم از بازار قابل گرفتن است.', $leader, ost_compact( $lead_c ), ost_num( ost_avg( array_column( $comps, 'ranking_pages' ) ) ) ) : '';
-	$t['offpage'] = sprintf( 'رقبا به‌طور میانگین %s رپورتاژ باکیفیت (رسانه ایرانی، لینک فالو، انکر هدفمند) دارند و %s %s. لینک‌های بی‌کیفیت مثل دایرکتوری، کامنت و پروفایل را حساب نکرده‌ایم.', ost_num( $off_avg ), $name, $cd ? ost_num( (int) ( $off_c['quality_reportages'] ?? 0 ) ) . ' رپورتاژ' : 'هنوز رپورتاژی ندارد' );
+	$t['offpage'] = ! ost_deck_has_offpage( $a ) ? '' : sprintf( 'رقبا به‌طور میانگین %s رپورتاژ باکیفیت (رسانه ایرانی، لینک فالو، انکر هدفمند) دارند و %s %s. لینک‌های بی‌کیفیت مثل دایرکتوری، کامنت و پروفایل را حساب نکرده‌ایم.', ost_num( $off_avg ), $name, $cd ? ost_num( (int) ( $off_c['quality_reportages'] ?? 0 ) ) . ' رپورتاژ' : 'هنوز رپورتاژی ندارد' );
 	$t['technical'] = $cd && isset( $tech['score'] ) ? sprintf( 'امتیاز فنی سایت %s از ۱۰۰ (%s) است. مهم‌ترین موارد: %s.', ost_num( $tech['score'] ), $tech['grade'], implode( '، ', array_slice( array_column( (array) $tech['issues'], 'label' ), 0, 3 ) ) ?: 'مورد مهمی دیده نشد' ) : 'سایت جدید را از ابتدا با استانداردهای فنی (سرعت، ساختار آدرس، اسکیما و نقشه سایت) می‌سازیم.';
-	$t['content'] = sprintf( 'حدود %s سؤال پرجستجو و %s کلمه‌ای که رقبا دارند و %s ندارد پیدا شد. برنامه محتوا از همین فاصله ساخته شده است.', ost_num( count( (array) ( $m['questions'] ?? array() ) ) ), ost_num( $a['gap']['count'] ?? 0 ), $name );
+	$nq           = count( (array) ( $m['questions'] ?? array() ) );
+	$ng           = (int) ( $a['gap']['count'] ?? 0 );
+	$t['content'] = $nq || $ng
+		? trim( ( $nq ? sprintf( 'حدود %s سؤال پرجستجوی مشتریان پیدا شد. ', ost_num( $nq ) ) : '' ) . ( $ng ? sprintf( '%s کلمه را رقبا دارند و %s ندارد. ', ost_num( $ng ), $name ) : '' ) . 'برنامه محتوا از همین فاصله ساخته شده است.' )
+		: sprintf( 'برنامه محتوا روی %s خوشه اصلی بازار ساخته شده: برای هر خوشه یک صفحه فرود قوی و مقالات پشتیبان.', ost_num( count( (array) ( $m['clusters'] ?? array() ) ) ) );
 	$t['strengths']     = $cd ? implode( "\n", array_filter( array( ! empty( $a['gsc']['brand']['brand'] ) ? 'برند شناخته‌شده و جستجوی مستقیم نام شما' : '', ( $tech['score'] ?? 0 ) >= 70 ? 'پایه فنی قابل قبول' : '', ( $client['keywords'] ?? 0 ) > 100 ? 'حضور اولیه در گوگل برای ' . ost_num( $client['keywords'] ) . ' کلمه' : '', 'شناخت بازار و مشتری' ) ) ) : "شروع از صفر بدون بدهی فنی\nامکان معماری درست از روز اول";
-	$t['weaknesses']    = implode( "\n", array_filter( array( $cd && ( $client['money_pages'] ?? array() ) ? '' : 'صفحات اختصاصی برای کلمات خرید کم است', ( $off_c['quality_reportages'] ?? 0 ) < $off_avg ? 'اعتبار و رپورتاژ کمتر از رقبا' : '', ( $tech['score'] ?? 100 ) < 70 ? 'مشکلات فنی مؤثر بر خزش و سرعت' : '' ) ) );
-	$t['opportunities'] = implode( "\n", array_filter( array( sprintf( '%s جستجوی خرید ماهانه', ost_compact( $m['buyer'] ?? 0 ) ), ( $a['gap']['count'] ?? 0 ) ? ost_num( $a['gap']['count'] ) . ' کلمه که رقبا دارند و شما ندارید' : '', 'سؤال‌های پرجستجوی مشتری که کسی کامل جواب نداده' ) ) );
+	$t['weaknesses']    = implode( "\n", array_filter( array( $cd && ( $client['money_pages'] ?? array() ) ? '' : 'صفحات اختصاصی برای کلمات خرید کم است', ost_deck_has_offpage( $a ) && ( $off_c['quality_reportages'] ?? 0 ) < $off_avg ? 'اعتبار و رپورتاژ کمتر از رقبا' : '', ( $tech['score'] ?? 100 ) < 70 ? 'مشکلات فنی مؤثر بر خزش و سرعت' : '' ) ) );
+	$t['opportunities'] = implode( "\n", array_filter( array( ! empty( $m['buyer'] ) ? sprintf( '%s جستجوی خرید ماهانه', ost_compact( $m['buyer'] ) ) : '', ( $a['gap']['count'] ?? 0 ) ? ost_num( $a['gap']['count'] ) . ' کلمه که رقبا دارند و شما ندارید' : '', ! empty( $sg['picks'] ) ? 'فرصت «' . $sg['picks'][0]['label'] . '» با رقابت کم و نتیجه سریع' : '', $nq ? 'سؤال‌های پرجستجوی مشتری که کسی کامل جواب نداده' : '' ) ) );
 	$t['threats']       = implode( "\n", array_filter( array( $leader ? 'سرمایه‌گذاری مداوم ' . $leader . ' روی سئو' : '', 'افزایش هزینه تبلیغات و وابستگی به آن', 'تغییرات الگوریتم گوگل' ) ) );
 	$t['next_steps']    = "جلسه مرور پروپوزال و پاسخ به سؤال‌ها\nدریافت دسترسی سایت، سرچ کنسول و آنالیتیکس\nشروع ماه اول: رفع موانع فنی و نقشه کلمات";
 	return $t;

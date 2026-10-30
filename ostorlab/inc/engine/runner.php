@@ -31,6 +31,14 @@ function ost_job_plan( $p, $fresh = false ) {
 	foreach ( $in['keywords'] as $kw ) {
 		$add( 'kw:' . $kw, 'تحقیق کلمه «' . $kw . '»' );
 	}
+	if ( ost_ai_connected() ) {
+		$add( 'aikw', 'پالایش کلمات و انتخاب کلمات کلیدی اصلی با هوش مصنوعی' );
+		foreach ( $steps as $k => $s ) {
+			if ( 0 === strpos( $k, 'kw:' ) && 'pending' === $s['status'] ) {
+				$steps['aikw']['status'] = 'pending'; // New keyword data: review again.
+			}
+		}
+	}
 	foreach ( ost_domains( $p ) as $d => $role ) {
 		$add( 'site:' . $d, 'کلمات و صفحات ' . $d );
 		$add( 'audit:' . $d, 'بررسی فنی سریع ' . $d );
@@ -177,7 +185,7 @@ function ost_job_step( $p, $key ) {
 		case 'kw':
 			$r = ost_ss_keyword( $arg, 'similar', 300 );
 			ost_put_data( $id, 'keywords', $arg, is_wp_error( $r ) ? array( 'seed' => $arg, 'list' => array(), 'error' => $r->get_error_message() ) : $r );
-			return is_wp_error( $r ) ? $r : sprintf( '%s کلمه مرتبط، %s جستجوی ماهانه', ost_num( count( $r['list'] ) ), ost_num( $r['total'] ) );
+			return is_wp_error( $r ) ? $r : sprintf( '%s کلمه دریافت شد؛ جستجوی ماهانه خود کلمه: %s (کلمات بی‌ربط و بدون جستجو بعداً حذف می‌شوند)', ost_num( count( $r['list'] ) ), ost_num( $r['volume'] ) );
 		case 'site':
 			$r = ost_ss_site( $arg );
 			if ( is_wp_error( $r ) ) {
@@ -240,6 +248,20 @@ function ost_job_step( $p, $key ) {
 			}
 			ost_set_data( $id, 'gsc', $r );
 			return sprintf( '%s کلیک در ۳ ماه', ost_num( $r['totals']['clicks'] ) );
+		case 'aikw':
+			$raw = array();
+			$kw  = ost_data( $id, 'keywords' );
+			foreach ( $p['inputs']['keywords'] as $s ) {
+				if ( isset( $kw[ $s ] ) ) {
+					$raw[ $s ] = $kw[ $s ];
+				}
+			}
+			$rev = ost_ai_keyword_review( $p, $raw );
+			if ( is_wp_error( $rev ) ) {
+				return $rev;
+			}
+			ost_set_data( $id, 'aikw', $rev );
+			return sprintf( '%s کلمه بی‌ربط حذف شد، %s کلمه کلیدی اصلی انتخاب شد', ost_num( count( $rev['drop'] ) ), ost_num( count( $rev['important'] ) ) );
 		case 'compute':
 			ost_compute( $id );
 			return 'محاسبه شد';
@@ -280,7 +302,9 @@ function ost_compute( $id ) {
 			$raw[ $s ] = $kw[ $s ];
 		}
 	}
-	$market   = ost_build_market( $raw );
+	$review   = ost_data( $id, 'aikw' );
+	$market   = ost_build_market( $raw, $review );
+	$market['ai_note'] = (string) ( $review['note'] ?? '' );
 	$tokens   = ost_market_tokens( $market, $in['keywords'] );
 	$profiles = array();
 	$offpage  = array();
@@ -292,6 +316,10 @@ function ost_compute( $id ) {
 		$brand                  = 'client' === $role ? $in['brand_terms'] : array( preg_replace( '/\..*$/', '', $d ) );
 		$offpage[ $d ]          = ost_offpage_profile( $rep[ $d ] ?? array(), $sem[ $d ] ?? array(), $brand, $tokens );
 		$tech[ $d ]             = ost_technical( $audit[ $d ] ?? array(), $sf[ $d ] ?? array() );
+	}
+	// With Search Console access, the client's own numbers come from it (SEO Signal only sees part of a small site).
+	if ( $cd && ! empty( $gsc['totals']['clicks'] ) && isset( $profiles[ $cd ] ) ) {
+		$profiles[ $cd ] = ost_profile_from_gsc( $profiles[ $cd ], $gsc, $market, $in );
 	}
 	$a = array(
 		'client_domain' => $cd,
@@ -309,6 +337,9 @@ function ost_compute( $id ) {
 	$a['opportunities'] = ost_opportunities( $market, $ss, $a['gap'], $cd, $gsc, $in );
 	$a['strategy']      = ost_strategy( $a['opportunities'], (array) $p['strategy'], $in, $cd );
 	unset( $a['opportunities'] );
+	$ai_market       = (array) get_post_meta( $id, '_ost_ai_market', true );
+	$a['channels']   = ost_channels( $a, $in, $ai_market );
+	$a['opps_ai']    = ost_market_opportunities( $a, $ai_market );
 	$a['market']['rows'] = array(); // Only needed for the strategy; keeps the stored analysis small.
 	$months      = (int) $in['months'];
 	$suggest     = ost_budget_suggest( $a, $months );
@@ -326,4 +357,40 @@ function ost_compute( $id ) {
 	ost_set_data( $id, 'analysis', $a );
 	update_post_meta( $id, '_ost_value', array( 'total' => $sel['total'], 'monthly' => $sel['monthly'], 'fees' => $sel['fees'], 'package' => $sel['label'] ) );
 	return $a;
+}
+
+/**
+ * Client profile from Search Console (last 3 months, per month): keywords, pages,
+ * impressions, clicks, buyer clicks and the clicks from the proposal's market.
+ */
+function ost_profile_from_gsc( $pr, $gsc, $market, $in ) {
+	$words  = array_flip( (array) ( $market['all_words'] ?? array() ) );
+	$clicks = 0;
+	$buyer  = 0;
+	$mkt    = 0;
+	$top10  = 0;
+	foreach ( (array) ( $gsc['queries'] ?? array() ) as $q ) {
+		$c      = $q['clicks'] / 3;
+		$intent = ost_intent( $q['query'] );
+		$clicks += $c;
+		$buyer  += $c * ( in_array( $intent, array( 'buy', 'compare', 'local' ), true ) ? 1 : ( 'general' === $intent ? 0.5 : 0 ) );
+		if ( isset( $words[ ost_norm( $q['query'] ) ] ) ) {
+			$mkt += $c;
+		}
+		if ( $q['position'] <= 10 ) {
+			$top10++;
+		}
+	}
+	$pr['keywords']      = max( (int) $pr['keywords'], (int) ( $gsc['totals']['queries'] ?? 0 ) );
+	$pr['ranking_pages'] = max( (int) $pr['ranking_pages'], (int) ( $gsc['totals']['pages'] ?? 0 ) );
+	$pr['impressions']   = (int) round( ( $gsc['totals']['impressions'] ?? 0 ) / 3 );
+	$pr['clicks']        = (int) round( ( $gsc['totals']['clicks'] ?? $clicks * 3 ) / 3 );
+	$pr['buyer_clicks']  = (int) round( $buyer );
+	$pr['market_clicks'] = (int) round( max( $mkt, $pr['market_clicks'] ) );
+	$pr['top10']         = max( (int) $pr['top10'], $top10 );
+	$pr['capped']        = false;
+	$pr['revenue']       = ost_revenue_range( $pr['buyer_clicks'], $in );
+	$pr['source']        = 'gsc';
+	$pr['has_data']      = true;
+	return $pr;
 }

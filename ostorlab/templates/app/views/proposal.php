@@ -145,6 +145,27 @@ $here   = ost_proposal_url( $id, $tab );
 		<div><b><?php echo esc_html( ost_num( $m['keywords'] ) ); ?></b><span>کلمه یکتا</span></div>
 		<div><b><?php echo esc_html( ost_num( count( $m['clusters'] ) ) ); ?></b><span>خوشه</span></div>
 	</section>
+	<?php $fl = (array) ( $m['filtered'] ?? array() ); if ( $fl ) : ?>
+		<div class="ost-notice">پالایش کلمات: <?php echo esc_html( sprintf( '%s کلمه بدون جستجو، %s کلمه بی‌ربط با کلمات اصلی و %s کلمه حذف‌شده توسط هوش مصنوعی کنار گذاشته شد؛ تحلیل روی %s کلمه انجام شده است.', ost_num( $fl['zero'] ?? 0 ), ost_num( $fl['irrelevant'] ?? 0 ), ost_num( $fl['ai'] ?? 0 ), ost_num( $fl['kept'] ?? 0 ) ) ); ?></div>
+	<?php endif; ?>
+	<?php if ( ! empty( $m['key'] ) ) : ?>
+		<section class="ost-panel">
+			<h2>کلمات کلیدی اصلی <small class="ost-muted"><?php echo array_filter( array_column( $m['key'], 'why' ) ) ? 'انتخاب و تحلیل هوش مصنوعی' : 'بر اساس نیت خرید و حجم جستجو'; ?></small></h2>
+			<?php if ( ! empty( $m['ai_note'] ) ) : ?><p><?php echo esc_html( $m['ai_note'] ); ?></p><?php endif; ?>
+			<table class="ost-table sm"><thead><tr><th>کلمه</th><th>جستجوی ماهانه</th><th>اولویت</th><th>چرا مهم است</th></tr></thead><tbody>
+				<?php foreach ( $m['key'] as $k ) { echo '<tr><td><b>' . esc_html( $k['w'] ) . '</b></td><td>' . esc_html( ost_num( $k['v'] ) ) . '</td><td>' . esc_html( array( 1 => 'حیاتی', 2 => 'مهم', 3 => 'مفید' )[ $k['p'] ] ?? 'مهم' ) . '</td><td class="kw">' . esc_html( $k['why'] ) . '</td></tr>'; } ?>
+			</tbody></table>
+		</section>
+	<?php endif; ?>
+	<?php if ( ! empty( $a['channels']['channels'] ) ) : $ch = $a['channels']; ?>
+		<section class="ost-panel">
+			<h2>تقاضا در همه کانال‌ها <small class="ost-muted"><?php echo 'ai' === $ch['source'] ? 'برآورد هوش مصنوعی' : 'برآورد پیش‌فرض نوع کسب‌وکار (با هوش مصنوعی دقیق‌تر می‌شود)'; ?></small></h2>
+			<div class="ost-stack"><?php foreach ( $ch['channels'] as $c ) { echo '<i style="flex:' . esc_attr( round( 1000 * $c['share'] ) ) . ';background:' . esc_attr( $c['color'] ) . '" title="' . esc_attr( $c['label'] ) . '">' . esc_html( ost_num( round( 100 * $c['share'] ) ) . '٪' ) . '</i>'; } ?></div>
+			<table class="ost-table sm"><thead><tr><th>کانال</th><th>سهم</th><th>تقاضای ماهانه (برآورد)</th><th>توضیح</th></tr></thead><tbody>
+				<?php foreach ( $ch['channels'] as $c ) { echo '<tr><td><i class="ost-dot" style="background:' . esc_attr( $c['color'] ) . '"></i> ' . esc_html( $c['label'] ) . '</td><td>' . esc_html( ost_num( round( 100 * $c['share'] ) ) ) . '٪</td><td>' . esc_html( ost_num( $c['demand'] ) ) . '</td><td class="kw">' . esc_html( $c['why'] ) . '</td></tr>'; } ?>
+			</tbody></table>
+		</section>
+	<?php endif; ?>
 	<section class="ost-panel">
 		<h2>خوشه‌ها</h2>
 		<table class="ost-table">
@@ -224,6 +245,15 @@ $here   = ost_proposal_url( $id, $tab );
 				<div><b><?php echo esc_html( ost_num( $sg['day90'][0] ) . ' تا ' . ost_num( $sg['day90'][1] ) ); ?></b><span>کلیک ماهانه تازه در ۹۰ روز</span></div>
 				<div><b><?php echo esc_html( ost_num( $sg['clicks'] ) ); ?></b><span>کلیک ماهانه پس از تثبیت</span></div>
 			</div>
+		</section>
+	<?php endif; ?>
+	<?php $op = (array) ( $a['opps_ai'] ?? array() ); if ( ! empty( $op['items'] ) ) : ?>
+		<section class="ost-panel">
+			<h2>پیشنهاد اصلی و فرصت‌های بازار <small class="ost-muted"><?php echo 'ai' === $op['source'] ? 'تحلیل هوش مصنوعی' : 'از امتیازدهی فرصت‌ها؛ برای تحلیل هوش مصنوعی متن‌ها را با AI بنویسید'; ?></small></h2>
+			<?php if ( ! empty( $op['main']['title'] ) ) : ?><p><b><?php echo esc_html( $op['main']['title'] ); ?></b> — <?php echo esc_html( $op['main']['text'] ?? '' ); ?></p><?php endif; ?>
+			<table class="ost-table sm"><thead><tr><th>فرصت</th><th>زاویه</th><th>کلمات</th><th>چرا</th><th>نتیجه قابل انتظار</th></tr></thead><tbody>
+				<?php foreach ( $op['items'] as $o ) { echo '<tr><td><b>' . esc_html( $o['title'] ) . '</b></td><td>' . esc_html( $o['angle'] ) . '</td><td class="kw">' . esc_html( implode( '، ', (array) $o['keywords'] ) ) . '</td><td class="kw">' . esc_html( $o['why'] ) . '</td><td>' . esc_html( $o['potential'] ) . '</td></tr>'; } ?>
+			</tbody></table>
 		</section>
 	<?php endif; ?>
 	<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="ost-panel">
@@ -347,16 +377,18 @@ $here   = ost_proposal_url( $id, $tab );
 				</div>
 			</li>
 			<li data-step="4">
-				<header><span class="n">۴</span><div><b>بررسی صفحاتی که خزیده می‌شوند</b><small>صفحات مهم از نقشه سایت هر دامنه</small></div><em class="st"></em></header>
+				<header><span class="n">۴</span><div><b>انتخاب دامنه‌ها و صفحات مهم</b><small>فقط صفحات پرترافیک و مهم هر سایت؛ سریع و کم‌حجم</small></div><em class="st"></em></header>
 				<div class="body">
+					<p class="ost-muted">برای هر دامنه صفحه اصلی، صفحاتی که ترافیک دارند (سرچ کنسول کارفرما و صفحات رتبه‌دار سئو سیگنال) و در صورت کمبود صفحات نقشه سایت انتخاب می‌شوند. اگر نمی‌خواهید رقیبی خزیده شود، تیک «خزش» آن را بردارید.</p>
 					<div class="ost-row"><label>حداکثر صفحه برای هر دامنه <input type="text" class="qty" data-limit value="<?php echo esc_attr( ost_num( $in['crawl_limit'] ) ); ?>"></label><button type="button" class="ost-btn primary" data-sf="urls">بررسی دامنه‌ها</button></div>
-					<table class="ost-table sm"><thead><tr><th>دامنه</th><th>نقش</th><th>صفحات آماده خزش</th></tr></thead><tbody data-urls></tbody></table>
+					<table class="ost-table sm"><thead><tr><th>خزش</th><th>دامنه</th><th>نقش</th><th>صفحات انتخاب‌شده</th></tr></thead><tbody data-urls></tbody></table>
 				</div>
 			</li>
 			<li data-step="5">
 				<header><span class="n">۵</span><div><b>اجرای خزش و تحلیل</b><small>کارفرما و همه رقبا؛ نتیجه خودکار می‌رسد</small></div><em class="st"></em></header>
 				<div class="body">
-					<p>همان فرمان، این بار بدون تست. پنجره را تا پایان باز بگذارید؛ بسته به تعداد صفحات چند دقیقه تا یک ساعت طول می‌کشد.</p>
+					<p>همان فرمان، این بار بدون تست. پنجره را تا پایان باز بگذارید؛ با ۳۰ صفحه برای هر سایت معمولاً چند دقیقه طول می‌کشد.</p>
+					<p class="ost-muted">اگر وسط کار قطع شد، همین فرمان را دوباره اجرا کنید: دامنه‌هایی که رسیده‌اند رد می‌شوند و خزش از دامنه بعدی ادامه پیدا می‌کند (برای خزش دوباره همه، <code dir="ltr">-Force</code> / <code dir="ltr">--force</code> اضافه کنید). اگر دامنه‌ای خطا بدهد، اسکریپت سراغ دامنه بعدی می‌رود.</p>
 					<div class="ost-cmd" data-os-show="win"><code dir="ltr">powershell -ExecutionPolicy Bypass -File <?php echo esc_html( $sfname ); ?>.ps1</code><button type="button" class="ost-btn sm" data-copy="powershell -ExecutionPolicy Bypass -File <?php echo esc_attr( $sfname ); ?>.ps1">کپی</button></div>
 					<div class="ost-cmd" data-os-show="sh"><code dir="ltr">bash <?php echo esc_html( $sfname ); ?>.sh</code><button type="button" class="ost-btn sm" data-copy="bash <?php echo esc_attr( $sfname ); ?>.sh">کپی</button></div>
 					<table class="ost-table sm"><thead><tr><th>دامنه</th><th>وضعیت</th><th>فایل‌های رسیده</th><th>صفحات خزیده</th></tr></thead><tbody data-crawl></tbody></table>

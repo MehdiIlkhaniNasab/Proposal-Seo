@@ -56,8 +56,11 @@ function ost_kw_overlap( $word, $seed ) {
  * @param array $raw  seed => ost_ss_keyword() result.
  * @return array{clusters: array, total: int, buyer: int, keywords: int, money: array, questions: array}
  */
-function ost_build_market( $raw ) {
-	$best = array(); // word key => [seed, overlap, row].
+function ost_build_market( $raw, $review = array() ) {
+	$best   = array(); // word key => [seed, overlap, row].
+	$drop   = array_flip( (array) ( $review['drop'] ?? array() ) );
+	$rescue = array_flip( (array) ( $review['keep'] ?? array() ) );
+	$stats  = array( 'zero' => 0, 'irrelevant' => 0, 'ai' => 0, 'kept' => 0 );
 	foreach ( $raw as $seed => $r ) {
 		if ( empty( $r['list'] ) && empty( $r['volume'] ) ) {
 			continue;
@@ -68,6 +71,19 @@ function ost_build_market( $raw ) {
 		}
 		foreach ( $rows as $row ) {
 			$k  = ost_norm( $row['w'] );
+			// Quality gate: no search volume, not about the seed's subject, or rejected by the AI review.
+			if ( (int) $row['v'] <= 0 ) {
+				$stats['zero']++;
+				continue;
+			}
+			if ( isset( $drop[ $k ] ) ) {
+				$stats['ai']++;
+				continue;
+			}
+			if ( ! isset( $rescue[ $k ] ) && ! ost_kw_relevant( $row['w'], $seed ) ) {
+				$stats['irrelevant']++;
+				continue;
+			}
 			$ov = ost_kw_overlap( $row['w'], $seed ) + ( $k === ost_norm( $seed ) ? 2 : 0 );
 			if ( ! isset( $best[ $k ] ) || $ov > $best[ $k ][1] ) {
 				$best[ $k ] = array( $seed, $ov, $row );
@@ -153,8 +169,96 @@ function ost_build_market( $raw ) {
 		'money'     => array_slice( $money, 0, 40 ),
 		'questions' => array_slice( $questions, 0, 40 ),
 		'all_words' => array_keys( $best ),
+		'filtered'  => array_merge( $stats, array( 'kept' => count( $best ) ) ),
+		'key'       => ost_key_keywords( $best, $review ),
 		'rows'      => $all_rows,
 	);
+}
+
+/**
+ * Text without spaces / ZWNJ for containment checks ("نیم ست" = "نیمست").
+ */
+function ost_compact_text( $s ) {
+	return str_replace( ' ', '', ost_norm( $s ) );
+}
+
+/**
+ * Is a keyword about the seed's subject? The seed's core (the seed without buy / price /
+ * best … words) must appear in the keyword, all of its words in any order. Search tools
+ * return loosely related words for rare seeds (for «خرید نیمست»: «خرید vpn», «خرید تتر»);
+ * this keeps only the ones that are really about the product.
+ */
+function ost_kw_relevant( $word, $seed ) {
+	$core = ost_topic_key( $seed );
+	if ( '' === $core ) {
+		return true;
+	}
+	$w = ost_compact_text( $word );
+	if ( false !== mb_strpos( $w, str_replace( ' ', '', $core ) ) ) {
+		return true;
+	}
+	foreach ( explode( ' ', $core ) as $t ) {
+		if ( mb_strlen( $t ) > 1 && false === mb_strpos( $w, $t ) ) {
+			return false;
+		}
+	}
+	return true;
+}
+
+/**
+ * Keywords sent to the AI review: every word with search volume, best first, with a flag
+ * whether it passed the relevance rule (uncertain ones may be rescued by the AI).
+ *
+ * @return array [{w, v, seed, sure}]
+ */
+function ost_keyword_candidates( $raw, $max = 350 ) {
+	$out = array();
+	foreach ( $raw as $seed => $r ) {
+		$rows = (array) ( $r['list'] ?? array() );
+		if ( ! empty( $r['volume'] ) ) {
+			array_unshift( $rows, array( 'w' => $seed, 'v' => (int) $r['volume'] ) );
+		}
+		foreach ( $rows as $row ) {
+			$k = ost_norm( $row['w'] );
+			if ( (int) $row['v'] > 0 && ! isset( $out[ $k ] ) ) {
+				$out[ $k ] = array( 'w' => $row['w'], 'v' => (int) $row['v'], 'seed' => $seed, 'sure' => ost_kw_relevant( $row['w'], $seed ) );
+			}
+		}
+	}
+	usort( $out, function ( $a, $b ) {
+		return array( $b['sure'], $b['v'] ) <=> array( $a['sure'], $a['v'] );
+	} );
+	return array_slice( $out, 0, $max );
+}
+
+/**
+ * The truly important keywords: the AI review's picks (with its reason), else the
+ * biggest buyer keywords.
+ *
+ * @return array [{w, v, why, p}]
+ */
+function ost_key_keywords( $best, $review ) {
+	$out = array();
+	foreach ( (array) ( $review['important'] ?? array() ) as $imp ) {
+		$k = ost_norm( $imp['w'] ?? '' );
+		if ( isset( $best[ $k ] ) ) {
+			$out[] = array( 'w' => $best[ $k ][2]['w'], 'v' => (int) $best[ $k ][2]['v'], 'why' => (string) ( $imp['why'] ?? '' ), 'p' => (int) ( $imp['priority'] ?? 2 ) );
+		}
+	}
+	usort( $out, function ( $a, $b ) {
+		return array( $a['p'], $b['v'] ) <=> array( $b['p'], $a['v'] );
+	} );
+	if ( ! $out ) {
+		foreach ( $best as $b ) {
+			if ( in_array( ost_intent( $b[2]['w'] ), array( 'buy', 'compare', 'local', 'general' ), true ) ) {
+				$out[] = array( 'w' => $b[2]['w'], 'v' => (int) $b[2]['v'], 'why' => '', 'p' => 2 );
+			}
+		}
+		usort( $out, function ( $a, $b ) {
+			return $b['v'] <=> $a['v'];
+		} );
+	}
+	return array_slice( $out, 0, 20 );
 }
 
 /**

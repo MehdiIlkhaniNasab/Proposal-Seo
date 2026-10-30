@@ -20,7 +20,9 @@ function ost_deck_slides( $p, $a ) {
 		'summary'     => 'خلاصه اجرایی',
 		'div_market'  => 'بخش ۱: بازار و رقبا',
 		'market'      => 'بازار جستجو',
+		'channels'    => 'تقاضا در همه کانال‌ها',
 		'clusters'    => 'خوشه‌های کلمات',
+		'keykw'       => 'کلمات کلیدی اصلی',
 		'money'       => 'کلمات پول‌ساز',
 		'current'     => $has ? 'وضعیت فعلی سایت' : 'شروع از صفر',
 		'competitors' => 'مقایسه با رقبا',
@@ -34,6 +36,7 @@ function ost_deck_slides( $p, $a ) {
 		'content'     => 'محتوا',
 		'swot'        => 'نقاط قوت، ضعف، فرصت و تهدید',
 		'div_plan'    => 'بخش ۳: استراتژی، نقشه راه و سرمایه‌گذاری',
+		'opps'        => 'پیشنهاد اصلی و فرصت‌های بازار',
 		'strategy'    => 'استراتژی شروع: نقشه فرصت‌ها',
 		'strategy_plan' => 'نقطه شروع و ۹۰ روز اول',
 		'roadmap'     => 'نقشه راه',
@@ -46,6 +49,41 @@ function ost_deck_slides( $p, $a ) {
 		'portfolio'   => 'نمونه‌کارها',
 		'closing'     => 'قدم بعدی',
 	);
+	// Nothing without data: a slide whose numbers are all zero / missing is left out.
+	$m = (array) ( $a['market'] ?? array() );
+	if ( empty( $m['total'] ) ) {
+		unset( $all['market'], $all['channels'] );
+	}
+	if ( empty( $a['channels']['channels'] ) ) {
+		unset( $all['channels'] );
+	}
+	if ( empty( $m['clusters'] ) ) {
+		unset( $all['clusters'] );
+	}
+	if ( ! array_filter( array_column( (array) ( $m['key'] ?? array() ), 'why' ) ) ) {
+		unset( $all['keykw'] );
+	}
+	if ( empty( $m['money'] ) ) {
+		unset( $all['money'] );
+	}
+	if ( ! ost_deck_competitor_rows( $a ) ) {
+		unset( $all['competitors'] );
+	}
+	if ( count( array_filter( (array) ( $a['sov'] ?? array() ) ) ) < 2 ) {
+		unset( $all['sov'] );
+	}
+	if ( ! ost_deck_has_offpage( $a ) ) {
+		unset( $all['offpage'] );
+	}
+	$tech = array_filter( (array) ( $a['technical'] ?? array() ), function ( $te ) {
+		return isset( $te['score'] ) && null !== $te['score'];
+	} );
+	if ( ! $tech ) {
+		unset( $all['technical'] );
+	}
+	if ( empty( $a['opps_ai']['items'] ) || 'ai' !== ( $a['opps_ai']['source'] ?? '' ) ) { // Without AI the strategy slides already show the scored picks.
+		unset( $all['opps'] );
+	}
 	if ( ! $has || empty( $a['gap']['count'] ) ) {
 		unset( $all['gap'] );
 	}
@@ -64,10 +102,36 @@ function ost_deck_slides( $p, $a ) {
 	if ( ! ost_portfolio() ) {
 		unset( $all['portfolio'] );
 	}
-	if ( count( (array) ( $a['technical'] ?? array() ) ) < 2 ) {
+	if ( count( $tech ) < 2 ) {
 		unset( $all['tech_compare'] );
 	}
 	return $all;
+}
+
+/**
+ * Competitor-table rows that have data (a site SEO Signal knows nothing about is left out;
+ * the client stays when it has a site).
+ */
+function ost_deck_competitor_rows( $a ) {
+	$rows = array_filter( (array) ( $a['profiles'] ?? array() ), function ( $pr ) {
+		return ! empty( $pr['keywords'] ) || ! empty( $pr['clicks'] ) || ! empty( $pr['impressions'] );
+	} );
+	$comp = array_filter( $rows, function ( $pr ) {
+		return 'competitor' === $pr['role'];
+	} );
+	return $comp ? $rows : array();
+}
+
+/**
+ * Whether any site has real off-page data (reportages or backlinks).
+ */
+function ost_deck_has_offpage( $a ) {
+	foreach ( (array) ( $a['offpage'] ?? array() ) as $o ) {
+		if ( ! empty( $o['quality_reportages'] ) || ! empty( $o['reportage']['total'] ) || ! empty( $o['backlinks']['refdomains'] ) ) {
+			return true;
+		}
+	}
+	return false;
 }
 
 /**

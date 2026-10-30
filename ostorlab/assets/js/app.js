@@ -137,7 +137,7 @@
 			paint();
 			return st;
 		} );
-		const stageLabel = { waiting: 'در انتظار', crawling: 'در حال خزش…', uploaded: 'رسید ✓', failed: 'ناموفق' };
+		const stageLabel = { waiting: 'در انتظار', crawling: 'در حال خزش…', uploaded: 'رسید ✓', failed: 'ناموفق — با اجرای دوباره ادامه می‌دهد', skipped: 'رد شد (بدون خزش)' };
 		const doneOf = ( n ) => [ st.installed, st.downloaded, st.connected && st.sf_found, st.urls_ok, st.all_done ][ n - 1 ];
 		const paint = () => {
 			let current = 0;
@@ -160,7 +160,19 @@
 					? '✓ اتصال برقرار شد — کامپیوتر <b>' + esc( st.ping.host ) + '</b> (' + esc( st.ping.os ) + ')، ' + esc( st.ping.ago ) + '<br>اسکریمینگ فراگ پیدا شد: <code dir="ltr">' + esc( st.ping.sf_path ) + '</code>'
 					: '⚠ اتصال برقرار شد ولی اسکریمینگ فراگ روی کامپیوتر <b>' + esc( st.ping.host ) + '</b> پیدا نشد. مسیر برنامه را با SpiderPath بدهید (راهنمای پایین) و تست را دوباره اجرا کنید.';
 			}
-			wiz.querySelector( '[data-urls]' ).innerHTML = st.domains.map( ( d ) => '<tr><td dir="ltr">' + esc( d.domain ) + '</td><td>' + ( d.role === 'client' ? 'کارفرما' : 'رقیب' ) + '</td><td>' + ( d.urls === null ? '<span class="ost-muted">بررسی نشده</span>' : ( d.url_error ? '<span class="ost-warn-t">از سرور باز نشد؛ اسکریمینگ فراگ از صفحه اصلی شروع می‌کند</span><br><small class="ost-muted">' + esc( d.url_error ) + '</small>' : fa( String( d.urls ) ) + ' صفحه' ) ) + '</td></tr>' ).join( '' );
+			const urlCell = ( d ) => {
+				if ( d.skip ) {
+					return '<span class="ost-muted">خزیده نمی‌شود</span>';
+				}
+				if ( d.urls === null ) {
+					return '<span class="ost-muted">بررسی نشده</span>';
+				}
+				if ( d.url_error ) {
+					return '<span class="ost-warn-t">از سرور باز نشد؛ اسکریمینگ فراگ از صفحه اصلی شروع می‌کند</span><br><small class="ost-muted">' + esc( d.url_error ) + '</small>';
+				}
+				return fa( String( d.urls ) ) + ' صفحه' + ( d.traffic ? ' <small class="ost-muted">(' + fa( String( d.traffic ) ) + ' صفحه پرترافیک)</small>' : '' );
+			};
+			wiz.querySelector( '[data-urls]' ).innerHTML = st.domains.map( ( d ) => '<tr' + ( d.skip ? ' class="is-skip"' : '' ) + '><td><input type="checkbox" data-skip="' + esc( d.domain ) + '"' + ( d.skip ? '' : ' checked' ) + '></td><td dir="ltr">' + esc( d.domain ) + '</td><td>' + ( d.role === 'client' ? 'کارفرما' : 'رقیب' ) + '</td><td>' + urlCell( d ) + '</td></tr>' ).join( '' );
 			wiz.querySelector( '[data-crawl]' ).innerHTML = st.domains.map( ( d ) => '<tr class="s-' + d.stage + '"><td dir="ltr">' + esc( d.domain ) + '</td><td>' + ( stageLabel[ d.stage ] || d.stage ) + ( d.note ? '<br><small>' + esc( d.note ) + '</small>' : '' ) + '</td><td>' + ( d.got.length ? d.got.map( ( g ) => ( { internal: 'صفحات', inlinks: 'لینک‌ها', redirects: 'ریدایرکت‌ها' } )[ g ] ).join( '، ' ) : '—' ) + '</td><td>' + ( d.pages ? fa( String( d.pages ) ) : '—' ) + '</td></tr>' ).join( '' );
 			wiz.querySelector( '[data-final]' ).hidden = ! st.all_done;
 			// Poll while the step needs the agent (3: test, 5: crawl).
@@ -169,6 +181,12 @@
 				timer = setInterval( () => sf( { do: 'state' } ).catch( () => {} ), current === 3 ? 3000 : 5000 );
 			}
 		};
+		wiz.addEventListener( 'change', ( e ) => {
+			const c = e.target.closest( '[data-skip]' );
+			if ( c ) {
+				sf( { do: 'skip', domain: c.dataset.skip, on: c.checked ? '' : '1' } ).catch( () => sf( { do: 'state' } ) );
+			}
+		} );
 		wiz.addEventListener( 'click', ( e ) => {
 			const b = e.target.closest( '[data-sf],[data-os-pick],[data-sf-download]' );
 			if ( ! b ) {
@@ -181,11 +199,12 @@
 			} else if ( b.dataset.sf === 'urls' ) {
 				const limit = wiz.querySelector( '[data-limit]' ).value;
 				b.disabled = true;
-				const doms = st.domains.map( ( d ) => d.domain );
+				const doms = st.domains.filter( ( d ) => ! d.skip ).map( ( d ) => d.domain );
 				const next = ( i ) => {
 					if ( i >= doms.length ) {
 						b.disabled = false;
-						const ok = st.domains.every( ( d ) => d.urls > 0 );
+						const live = st.domains.filter( ( d ) => ! d.skip );
+						const ok = live.length > 0 && live.every( ( d ) => d.urls > 0 );
 						return ok ? sf( { do: 'urls_ok' } ) : null;
 					}
 					b.textContent = 'بررسی ' + doms[ i ] + '…';

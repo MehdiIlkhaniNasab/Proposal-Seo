@@ -44,7 +44,7 @@ function ost_input_defaults() {
 		'aov'             => 0,
 		'conversion_rate' => (float) ost_setting( 'conversion_rate', 1.5 ),
 		'months'          => (int) ost_setting( 'default_months', 12 ),
-		'crawl_limit'     => 500,
+		'crawl_limit'     => 30,
 		'goals'           => '',
 		'notes'           => '',
 		// Presenter (empty = from settings).
@@ -153,7 +153,7 @@ function ost_clean_inputs( $in ) {
 	$out['competitors'] = array_slice( array_values( array_unique( array_filter( array_map( 'ost_domain', $out['competitors'] ) ) ) ), 0, 6 );
 	$out['competitors'] = array_values( array_diff( $out['competitors'], array( $out['domain'] ) ) );
 	$out['months']      = (int) ost_clamp( $out['months'], 6, 18 );
-	$out['crawl_limit'] = (int) ost_clamp( $out['crawl_limit'], 50, 5000 );
+	$out['crawl_limit'] = (int) ost_clamp( $out['crawl_limit'] ?: 30, 5, 2000 );
 	$out['business_type'] = array_key_exists( $out['business_type'], ost_business_types() ) ? $out['business_type'] : 'shop';
 	if ( ! $out['brand_terms'] && $out['domain'] ) {
 		$out['brand_terms'] = array( preg_replace( '/\..*$/', '', $out['domain'] ) );

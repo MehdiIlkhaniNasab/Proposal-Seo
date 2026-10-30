@@ -173,45 +173,48 @@ add_action( 'wp_ajax_ost_sf', function () {
 	} elseif ( 'os' === $do ) {
 		ost_sf_wizard_save( $id, array( 'os' => in_array( ost_post( 'os' ), array( 'win', 'sh' ), true ) ? ost_post( 'os' ) : 'win' ) );
 	} elseif ( 'urls' === $do ) {
-		// Check (and build when missing) the URL list of one domain from its sitemaps.
+		// Important URLs of one domain (traffic pages first, then the sitemap).
 		$domain = ost_domain( (string) ost_post( 'domain' ) );
 		if ( isset( ost_domains( $p )[ $domain ] ) ) {
 			$limit = (int) ost_to_number( ost_post( 'limit' ) );
-			if ( $limit ) {
+			if ( $limit && $limit !== (int) $p['inputs']['crawl_limit'] ) {
 				$p['inputs']['crawl_limit'] = $limit;
 				ost_save_proposal( $id, $p['inputs'] );
 				$p = ost_proposal( $id );
 			}
-			$audit = ost_data( $id, 'audit' )[ $domain ] ?? null;
-			if ( ! $audit || count( (array) $audit['urls'] ) < min( (int) $p['inputs']['crawl_limit'], (int) ( $audit['sitemap']['total'] ?? 0 ) ) - 1 ) {
-				// If the server dies while reading the site (time limit, fatal error), record it so the
-				// wizard can go on with the home page instead of getting stuck on this domain.
-				register_shutdown_function( function () use ( $id, $domain ) {
-					if ( ! empty( $GLOBALS['ost_sf_urlcheck'] ) ) {
-						$errs            = (array) ost_sf_wizard( $id )['url_errors'];
-						$errs[ $domain ] = 'سرور هنگام خواندن نقشه سایت متوقف شد (محدودیت زمان یا خطای هاست).';
-						ost_sf_wizard_save( $id, array( 'url_errors' => $errs ) );
-					}
-				} );
-				$GLOBALS['ost_sf_urlcheck'] = true;
-				try {
-					$r = ost_site_audit( $domain, 3, (int) $p['inputs']['crawl_limit'] );
-				} catch ( Throwable $e ) {
-					$r = new WP_Error( 'ost_audit', $e->getMessage() );
+			// If the server dies while reading the site, record it and go on with the home page.
+			register_shutdown_function( function () use ( $id, $domain ) {
+				if ( ! empty( $GLOBALS['ost_sf_urlcheck'] ) ) {
+					$w                         = ost_sf_wizard( $id );
+					$w['url_errors'][ $domain ] = 'سرور هنگام خواندن نقشه سایت متوقف شد (محدودیت زمان یا خطای هاست).';
+					$w['url_counts'][ $domain ] = array( 'n' => 1, 'traffic' => 0 );
+					ost_sf_wizard_save( $id, $w );
 				}
-				unset( $GLOBALS['ost_sf_urlcheck'] );
-				$errs = (array) ost_sf_wizard( $id )['url_errors'];
-				if ( is_wp_error( $r ) ) {
-					// The site cannot be read from this server (firewall, Cloudflare…): SEO Spider still
-					// crawls it from your computer, starting from the home page.
-					$errs[ $domain ] = $r->get_error_message();
-				} else {
-					unset( $errs[ $domain ] );
-					ost_put_data( $id, 'audit', $domain, $r );
-				}
-				ost_sf_wizard_save( $id, array( 'url_errors' => $errs ) );
+			} );
+			$GLOBALS['ost_sf_urlcheck'] = true;
+			try {
+				$r = ost_sf_important_urls( $p, $domain );
+			} catch ( Throwable $e ) {
+				$r = array( 'urls' => array( ost_home_url( $domain ) ), 'traffic' => 0, 'error' => $e->getMessage() );
 			}
+			unset( $GLOBALS['ost_sf_urlcheck'] );
+			$w = ost_sf_wizard( $id );
+			$w['url_counts'][ $domain ] = array( 'n' => count( $r['urls'] ), 'traffic' => (int) $r['traffic'] );
+			if ( ! empty( $r['error'] ) && count( $r['urls'] ) <= 1 ) {
+				$w['url_errors'][ $domain ] = $r['error'];
+			} else {
+				unset( $w['url_errors'][ $domain ] );
+			}
+			ost_sf_wizard_save( $id, $w );
 		}
+	} elseif ( 'skip' === $do ) {
+		$domain = ost_domain( (string) ost_post( 'domain' ) );
+		$w      = ost_sf_wizard( $id );
+		$skip   = array_diff( (array) $w['skip'], array( $domain ) );
+		if ( ost_post( 'on' ) ) {
+			$skip[] = $domain;
+		}
+		ost_sf_wizard_save( $id, array( 'skip' => array_values( array_unique( $skip ) ) ) );
 	} elseif ( 'urls_ok' === $do ) {
 		ost_sf_wizard_save( $id, array( 'urls_ok' => 1 ) );
 	} elseif ( 'analyze' === $do ) {

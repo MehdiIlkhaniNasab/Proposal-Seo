@@ -156,8 +156,47 @@ $css = (string) file_get_contents( $assets['css'] ); // phpcs:ignore WordPress.W
 			<?php echo ost_chart_split( $m['intents'], 560 ); // phpcs:ignore ?>
 			<div class="tiles t2 mt">
 				<?php $tile( ost_compact( $m['buyer'] ), 'جستجوی خرید، مقایسه و محلی', 'مستقیم مشتری می‌آورد', 'hl' ); ?>
-				<?php $tile( ost_compact( $m['intents']['info'] ?? 0 ), 'جستجوی آموزشی', 'برای اعتماد و جذب مشتری آینده' ); ?>
+				<?php
+				if ( ! empty( $m['intents']['info'] ) ) {
+					$tile( ost_compact( $m['intents']['info'] ), 'جستجوی آموزشی', 'برای اعتماد و جذب مشتری آینده' );
+				} else {
+					$tile( ost_num( $m['keywords'] ), 'کلمه مرتبط با جستجوی واقعی', 'کلمات بی‌ربط و بدون جستجو حذف شده‌اند' );
+				}
+				?>
 			</div>
+		</div>
+	</div>
+<?php $close(); endif; ?>
+
+<?php
+if ( $on( 'channels' ) ) :
+	$ch    = $a['channels'];
+	$close = $open( $section['market'] . ' · کانال‌های تقاضا', 'مشتریان شما کجا دنبال این محصول/خدمت می‌گردند؟', 'گوگل فقط یکی از کانال‌هاست؛ این برآورد نشان می‌دهد سئو چه سهمی از کل تقاضای بازار شما را پوشش می‌دهد.' );
+	?>
+	<div class="grid g-chan">
+		<div class="card">
+			<h3>سهم هر کانال از تقاضای بازار (برآورد)</h3>
+			<div class="stack100" dir="rtl">
+				<?php foreach ( $ch['channels'] as $k => $c ) : ?>
+					<i style="flex:<?php echo esc_attr( round( 1000 * $c['share'] ) ); ?>;background:<?php echo esc_attr( $c['color'] ); ?>"><?php echo $c['share'] >= .08 ? esc_html( ost_num( round( 100 * $c['share'] ) ) . '٪' ) : ''; ?></i>
+				<?php endforeach; ?>
+			</div>
+			<ul class="chan-list">
+				<?php foreach ( $ch['channels'] as $k => $c ) : ?>
+					<li class="<?php echo 'google' === $k ? 'is-google' : ''; ?>">
+						<i class="dot" style="background:<?php echo esc_attr( $c['color'] ); ?>"></i>
+						<div><b><?php echo esc_html( $c['label'] ); ?></b><?php echo $c['why'] ? '<small>' . esc_html( $c['why'] ) . '</small>' : ''; ?></div>
+						<em><?php echo esc_html( ost_num( round( 100 * $c['share'] ) ) . '٪' ); ?><span>حدود <?php echo esc_html( ost_compact( $c['demand'] ) ); ?> در ماه</span></em>
+					</li>
+				<?php endforeach; ?>
+			</ul>
+		</div>
+		<div class="tiles t1">
+			<?php
+			$tile( ost_compact( $ch['total'] ), 'تقاضای ماهانه در همه کانال‌ها', 'برآورد، با پایه جستجوی واقعی گوگل' );
+			$tile( ost_compact( $ch['google'] ), 'جستجوی ماهانه در گوگل', 'اندازه‌گیری‌شده (سئو سیگنال) — سهم سئو', 'hl' );
+			?>
+			<p class="note"><?php echo esc_html( $ch['note'] ?: ( 'ai' === $ch['source'] ? 'سهم کانال‌ها برآورد هوش مصنوعی از رفتار خرید این صنعت در ایران است.' : 'سهم کانال‌ها برآورد ما از الگوی معمول این نوع کسب‌وکار در ایران است.' ) ); ?> عدد گوگل داده واقعی است و بقیه کانال‌ها نسبت به آن تخمین زده شده‌اند.</p>
 		</div>
 	</div>
 <?php $close(); endif; ?>
@@ -178,6 +217,23 @@ $css = (string) file_get_contents( $assets['css'] ); // phpcs:ignore WordPress.W
 		<?php endforeach; ?>
 		</tbody>
 	</table>
+<?php $close(); endif; ?>
+
+<?php if ( $on( 'keykw' ) ) : $close = $open( $section['market'] . ' · کلمات کلیدی اصلی', 'کلماتی که واقعاً برای فروش شما مهم‌اند', $m['ai_note'] ?: 'از میان همه کلمات بازار، این‌ها مستقیم‌ترین مسیر به مشتری‌اند؛ کلمات بی‌ربط و بدون جستجو کنار گذاشته شده‌اند.' ); ?>
+	<?php $prio = array( 1 => array( 'حیاتی', 'p1' ), 2 => array( 'مهم', 'p2' ), 3 => array( 'مفید', 'p3' ) ); $kk = array_slice( $m['key'], 0, 12 ); ?>
+	<div class="key-grid">
+		<?php foreach ( $kk as $i => $k ) : $pr = $prio[ $k['p'] ] ?? $prio[2]; ?>
+			<div class="key-kw">
+				<span class="pr <?php echo esc_attr( $pr[1] ); ?>"><?php echo esc_html( $pr[0] ); ?></span>
+				<b><?php echo esc_html( $k['w'] ); ?></b>
+				<em><?php echo esc_html( ost_num( $k['v'] ) ); ?><i>جستجو در ماه</i></em>
+				<?php if ( $k['why'] ) : ?><small><?php echo esc_html( $k['why'] ); ?></small><?php endif; ?>
+			</div>
+		<?php endforeach; ?>
+	</div>
+	<?php if ( ! empty( $m['filtered'] ) && ( $m['filtered']['zero'] + $m['filtered']['irrelevant'] + $m['filtered']['ai'] ) > 0 ) : ?>
+		<p class="note">پالایش داده: <?php echo esc_html( ost_num( $m['filtered']['zero'] + $m['filtered']['irrelevant'] + $m['filtered']['ai'] ) ); ?> کلمه بدون جستجو یا بی‌ربط با کسب‌وکار شما حذف شد و تحلیل روی <?php echo esc_html( ost_num( $m['filtered']['kept'] ) ); ?> کلمه واقعی انجام شده است. منبع حجم جستجو: سئو سیگنال.</p>
+	<?php endif; ?>
 <?php $close(); endif; ?>
 
 <?php if ( $on( 'money' ) ) : $close = $open( $section['market'] . ' · کلمات پول‌ساز', 'جستجوهایی که مشتری می‌آورند', 'تمرکز سئو روی این کلمات است، نه بازدید بی‌خاصیت. هر کدام صفحه اختصاصی و قوی لازم دارد.' ); ?>
@@ -251,20 +307,40 @@ endif;
 ?>
 
 <?php if ( $on( 'competitors' ) ) : $close = $open( $section['market'] . ' · رقبا', $cd ? 'شما و رقبا، کنار هم' : 'رقبای اصلی شما', $t['competitors'] ?? '' ); ?>
+	<?php
+	$crows = ost_deck_competitor_rows( $a );
+	$ccol  = function ( $fn ) use ( $crows ) {
+		foreach ( $crows as $pr ) {
+			if ( $fn( $pr ) ) {
+				return true;
+			}
+		}
+		return false;
+	};
+	$c_pages = $ccol( function ( $pr ) {
+		return ! empty( $pr['site_pages'] );
+	} );
+	$c_ord   = $ccol( function ( $pr ) {
+		return ! empty( $pr['revenue']['orders'] );
+	} );
+	$c_rev   = $ccol( function ( $pr ) {
+		return ! empty( $pr['revenue']['high'] );
+	} );
+	?>
 	<table class="tbl cmp">
-		<thead><tr><th>سایت</th><th>صفحات سایت</th><th>کلمات رتبه‌دار</th><th>صفحات رتبه‌دار</th><th>نمایش ماهانه*</th><th>کلیک ماهانه*</th><th>کلیک خرید*</th><th><?php echo in_array( $in['business_type'], array( 'service', 'local', 'saas' ), true ) ? 'سرنخ ماهانه*' : 'سفارش ماهانه*'; ?></th><th>درآمد ماهانه از گوگل*</th></tr></thead>
+		<thead><tr><th>سایت</th><?php echo $c_pages ? '<th>صفحات سایت</th>' : ''; ?><th>کلمات رتبه‌دار</th><th>صفحات رتبه‌دار</th><th>نمایش ماهانه*</th><th>کلیک ماهانه*</th><th>کلیک خرید*</th><?php echo $c_ord ? '<th>' . ( in_array( $in['business_type'], array( 'service', 'local', 'saas' ), true ) ? 'سرنخ ماهانه*' : 'سفارش ماهانه*' ) . '</th>' : ''; ?><?php echo $c_rev ? '<th>درآمد ماهانه از گوگل*</th>' : ''; ?></tr></thead>
 		<tbody>
-		<?php foreach ( $a['profiles'] as $d => $pr ) : ?>
+		<?php foreach ( $crows as $d => $pr ) : ?>
 			<tr class="<?php echo 'client' === $pr['role'] ? 'me' : ''; ?>">
 				<td><b><?php echo esc_html( $d ); ?></b><?php echo 'client' === $pr['role'] ? ' <em>شما</em>' : ''; ?></td>
-				<td class="n"><?php echo esc_html( $pr['site_pages'] ? ost_num( $pr['site_pages'] ) : '—' ); ?></td>
+				<?php if ( $c_pages ) : ?><td class="n"><?php echo esc_html( $pr['site_pages'] ? ost_num( $pr['site_pages'] ) : '—' ); ?></td><?php endif; ?>
 				<td class="n"><?php echo esc_html( ost_num( $pr['keywords'] ) . ( $pr['capped'] ? '+' : '' ) ); ?></td>
 				<td class="n"><?php echo esc_html( ost_num( $pr['ranking_pages'] ) ); ?></td>
 				<td class="n"><?php echo esc_html( ost_compact( $pr['impressions'] ) ); ?></td>
 				<td class="n"><?php echo esc_html( ost_compact( $pr['clicks'] ) ); ?></td>
 				<td class="n"><?php echo esc_html( ost_compact( $pr['buyer_clicks'] ) ); ?></td>
-				<td class="n"><?php echo esc_html( ost_compact( $pr['revenue']['orders'] ) ); ?></td>
-				<td class="n"><?php echo esc_html( $range( $pr['revenue'] ) ); ?></td>
+				<?php if ( $c_ord ) : ?><td class="n"><?php echo esc_html( ost_compact( $pr['revenue']['orders'] ) ); ?></td><?php endif; ?>
+				<?php if ( $c_rev ) : ?><td class="n"><?php echo esc_html( $range( $pr['revenue'] ) ); ?></td><?php endif; ?>
 			</tr>
 		<?php endforeach; ?>
 		</tbody>
@@ -278,7 +354,7 @@ endif;
 			<h3>سهم از کلیک‌های بازار</h3>
 			<?php
 			$rows = array();
-			foreach ( $a['sov'] as $d => $s ) {
+			foreach ( array_filter( $a['sov'] ) as $d => $s ) {
 				$rows[] = array( 'label' => $d, 'value' => round( 100 * $s ), 'hl' => $d === $cd );
 			}
 			usort( $rows, function ( $x, $y ) {
@@ -327,25 +403,33 @@ endif;
 			<h3>رپورتاژ باکیفیت هر سایت</h3>
 			<?php
 			$rows = array();
-			foreach ( $a['offpage'] as $d => $o ) {
+			$offs = array_filter( $a['offpage'], function ( $o ) {
+				return ! empty( $o['reportage']['available'] ) || ! empty( $o['backlinks']['available'] );
+			} );
+			foreach ( $offs as $d => $o ) {
 				$rows[] = array( 'label' => $d, 'value' => $o['quality_reportages'], 'hl' => $d === $cd );
 			}
+			$o_bl    = (bool) array_filter( array_map( function ( $o ) {
+				return $o['backlinks']['refdomains'] ?? 0;
+			}, $offs ) );
+			$o_spend = (bool) array_filter( array_column( array_column( $offs, 'reportage' ), 'spend12' ) );
+			$o_media = (bool) array_filter( array_column( array_column( $offs, 'reportage' ), 'media' ) );
 			echo ost_chart_hbar( $rows, 520, 'ost_num' ); // phpcs:ignore
 			?>
 		</div>
 		<div class="card">
 			<table class="tbl sm">
-				<thead><tr><th>سایت</th><th>کل رپورتاژ</th><th>۱۲ ماه اخیر</th><th>رسانه</th><th>باکیفیت</th><th>دامنه ارجاع‌دهنده باکیفیت</th><th>هزینه تخمینی ۱۲ ماه</th></tr></thead>
+				<thead><tr><th>سایت</th><th>کل رپورتاژ</th><th>۱۲ ماه اخیر</th><?php echo $o_media ? '<th>رسانه</th>' : ''; ?><th>باکیفیت</th><?php echo $o_bl ? '<th>دامنه ارجاع‌دهنده باکیفیت</th>' : ''; ?><?php echo $o_spend ? '<th>هزینه تخمینی ۱۲ ماه</th>' : ''; ?></tr></thead>
 				<tbody>
-				<?php foreach ( $a['offpage'] as $d => $o ) : $r = $o['reportage']; $b = $o['backlinks']; ?>
+				<?php foreach ( $offs as $d => $o ) : $r = $o['reportage']; $b = $o['backlinks']; ?>
 					<tr class="<?php echo $d === $cd ? 'me' : ''; ?>">
 						<td><b><?php echo esc_html( $d ); ?></b></td>
 						<td class="n"><?php echo esc_html( $r['available'] ? ost_num( $r['total'] ) : '—' ); ?></td>
 						<td class="n"><?php echo esc_html( $r['available'] ? ost_num( $r['last12'] ) : '—' ); ?></td>
-						<td class="n"><?php echo esc_html( $r['available'] ? ost_num( $r['media'] ) : '—' ); ?></td>
+						<?php if ( $o_media ) : ?><td class="n"><?php echo esc_html( $r['available'] ? ost_num( $r['media'] ) : '—' ); ?></td><?php endif; ?>
 						<td class="n"><b><?php echo esc_html( ost_num( $o['quality_reportages'] ) ); ?></b></td>
-						<td class="n"><?php echo esc_html( ! empty( $b['available'] ) ? ost_num( $b['quality_refdomains'] ) . ' از ' . ost_num( $b['refdomains'] ) : '—' ); ?></td>
-						<td class="n"><?php echo esc_html( $r['spend12'] ? ost_toman( $r['spend12'], true ) : '—' ); ?></td>
+						<?php if ( $o_bl ) : ?><td class="n"><?php echo esc_html( ! empty( $b['available'] ) ? ost_num( $b['quality_refdomains'] ) . ' از ' . ost_num( $b['refdomains'] ) : '—' ); ?></td><?php endif; ?>
+						<?php if ( $o_spend ) : ?><td class="n"><?php echo esc_html( $r['spend12'] ? ost_toman( $r['spend12'], true ) : '—' ); ?></td><?php endif; ?>
 					</tr>
 				<?php endforeach; ?>
 				</tbody>
@@ -407,39 +491,69 @@ endif;
 ?>
 
 <?php if ( $on( 'tech_compare' ) ) : $close = $open( $section['audit'] . ' · مقایسه فنی', 'استاندارد فنی شما و رقبا', 'امتیاز ۱۰۰ یعنی مشکلی که جلوی رشد را بگیرد دیده نشد.' ); ?>
+	<?php
+	$techs  = array_filter( $a['technical'], function ( $te ) {
+		return null !== ( $te['score'] ?? null );
+	} );
+	$has_mt = function ( $fn ) use ( $techs ) {
+		return (bool) array_filter( $techs, $fn );
+	};
+	$t_sf    = $has_mt( function ( $te ) {
+		return ! empty( $te['has_sf'] );
+	} );
+	$t_cms   = $has_mt( function ( $te ) {
+		return ! empty( $te['metrics']['cms'] ) && false === mb_strpos( $te['metrics']['cms'], 'نامشخص' );
+	} );
+	$t_speed = $has_mt( function ( $te ) {
+		return ! empty( $te['metrics']['home_ms'] ) && $te['metrics']['home_ms'] >= 50;
+	} );
+	$t_schema = $has_mt( function ( $te ) {
+		return ! empty( $te['metrics']['sample'] );
+	} );
+	$t_depth = $has_mt( function ( $te ) {
+		return ! empty( $te['metrics']['avg_depth'] );
+	} );
+	?>
 	<table class="tbl cmp">
-		<thead><tr><th>سایت</th><th>امتیاز فنی</th><th>پلتفرم</th><th>HTTPS</th><th>نقشه سایت</th><th>اسکیما در نمونه‌ها</th><th>سرعت صفحه اصلی</th><th>خطای ۴xx</th><th>لینک شکسته</th><th>عمق میانگین</th></tr></thead>
+		<thead><tr><th>سایت</th><th>امتیاز فنی</th><?php echo $t_cms ? '<th>پلتفرم</th>' : ''; ?><th>HTTPS</th><th>نقشه سایت</th><?php echo $t_schema ? '<th>اسکیما در نمونه‌ها</th>' : ''; ?><?php echo $t_speed ? '<th>سرعت صفحه اصلی</th>' : ''; ?><?php echo $t_sf ? '<th>خطای ۴xx</th><th>لینک شکسته</th>' : ''; ?><?php echo $t_depth ? '<th>عمق میانگین</th>' : ''; ?></tr></thead>
 		<tbody>
-		<?php foreach ( $a['technical'] as $d => $te ) : $mt = $te['metrics']; ?>
+		<?php foreach ( $techs as $d => $te ) : $mt = $te['metrics']; ?>
 			<tr class="<?php echo $d === $cd ? 'me' : ''; ?>">
 				<td><b><?php echo esc_html( $d ); ?></b></td>
-				<td class="n"><b><?php echo esc_html( null === $te['score'] ? '—' : ost_num( $te['score'] ) ); ?></b></td>
-				<td><?php echo esc_html( $mt['cms'] ?? '—' ); ?></td>
+				<td class="n"><b><?php echo esc_html( ost_num( $te['score'] ) ); ?></b></td>
+				<?php if ( $t_cms ) : ?><td><?php echo esc_html( $mt['cms'] ?? '—' ); ?></td><?php endif; ?>
 				<td><?php echo ! empty( $mt['https'] ) ? '✓' : '✗'; ?></td>
-				<td><?php echo ! empty( $mt['sitemap'] ) ? '✓ ' . esc_html( ost_num( $mt['pages'] ) ) : '✗'; ?></td>
-				<td class="n"><?php echo esc_html( ! empty( $mt['sample'] ) ? ost_num( $mt['schema'] ) . ' از ' . ost_num( $mt['sample'] ) : '—' ); ?></td>
-				<td class="n"><?php echo esc_html( ! empty( $mt['home_ms'] ) ? ost_num( $mt['home_ms'] / 1000, 1 ) . ' ث' : '—' ); ?></td>
-				<td class="n"><?php echo esc_html( ! empty( $te['has_sf'] ) ? ost_num( $mt['e4xx'] ) : '—' ); ?></td>
-				<td class="n"><?php echo esc_html( ! empty( $te['has_sf'] ) ? ost_num( $mt['broken'] ) : '—' ); ?></td>
-				<td class="n"><?php echo esc_html( ! empty( $mt['avg_depth'] ) ? ost_num( $mt['avg_depth'], 1 ) : '—' ); ?></td>
+				<td><?php echo ! empty( $mt['sitemap'] ) ? '✓ ' . esc_html( ! empty( $mt['pages'] ) ? ost_num( $mt['pages'] ) : '' ) : '✗'; ?></td>
+				<?php if ( $t_schema ) : ?><td class="n"><?php echo esc_html( ! empty( $mt['sample'] ) ? ost_num( $mt['schema'] ) . ' از ' . ost_num( $mt['sample'] ) : '—' ); ?></td><?php endif; ?>
+				<?php if ( $t_speed ) : ?><td class="n"><?php echo esc_html( ! empty( $mt['home_ms'] ) && $mt['home_ms'] >= 50 ? ost_num( $mt['home_ms'] / 1000, 1 ) . ' ث' : '—' ); ?></td><?php endif; ?>
+				<?php if ( $t_sf ) : ?><td class="n"><?php echo esc_html( ! empty( $te['has_sf'] ) ? ost_num( $mt['e4xx'] ) : '—' ); ?></td><td class="n"><?php echo esc_html( ! empty( $te['has_sf'] ) ? ost_num( $mt['broken'] ) : '—' ); ?></td><?php endif; ?>
+				<?php if ( $t_depth ) : ?><td class="n"><?php echo esc_html( ! empty( $mt['avg_depth'] ) ? ost_num( $mt['avg_depth'], 1 ) : '—' ); ?></td><?php endif; ?>
 			</tr>
 		<?php endforeach; ?>
 		</tbody>
 	</table>
-	<p class="note">ستون‌های ۴xx، لینک شکسته و عمق از خزش اسکریمینگ فراگ است (— یعنی آن سایت خزیده نشده).</p>
+	<?php if ( $t_sf ) : ?><p class="note">ستون‌های ۴xx و لینک شکسته از خزش اسکریمینگ فراگ صفحات مهم هر سایت است (— یعنی آن سایت خزیده نشده).</p><?php endif; ?>
 <?php $close(); endif; ?>
 
 <?php if ( $on( 'content' ) ) : $close = $open( $section['audit'] . ' · محتوا', 'محتوایی که مشتری دنبالش است', $t['content'] ?? '' ); ?>
-	<div class="grid g-2">
+	<?php
+	$qs = array_filter( (array) $m['questions'], function ( $q ) {
+		return $q['v'] > 0;
+	} );
+	$qs = count( $qs ) >= 3 ? $qs : array(); // One or two questions are not worth a card.
+	?>
+	<div class="grid <?php echo $qs ? 'g-2' : 'g-1'; ?>">
+		<?php if ( $qs ) : ?>
 		<div class="card">
 			<h3>سؤال‌های پرجستجوی مشتریان</h3>
 			<ol class="qs">
-				<?php foreach ( array_slice( $m['questions'], 0, 10 ) as $q ) : ?>
+				<?php foreach ( array_slice( $qs, 0, 10 ) as $q ) : ?>
 					<li><span><?php echo esc_html( $q['w'] ); ?></span><b><?php echo esc_html( ost_num( $q['v'] ) ); ?></b></li>
 				<?php endforeach; ?>
 			</ol>
 		</div>
-		<div class="tiles t2">
+		<?php endif; ?>
+		<div class="tiles <?php echo $qs ? 't2' : 't4'; ?>">
 			<?php
 			$tile( ost_num( $pkg['qty']['landings'] ), 'صفحه فرود / دسته', 'برای کلمات خرید' );
 			$tile( ost_num( $pkg['qty']['articles'] ), 'مقاله تخصصی', 'در ' . ost_num( $months - 1 ) . ' ماه', 'hl' );
@@ -460,6 +574,34 @@ endif;
 <?php $close(); endif; ?>
 
 <?php if ( $on( 'div_plan' ) ) { $divider( $section['plan'], 'استراتژی و نقشه راه', 'از کجا شروع می‌کنیم، چقدر طول می‌کشد و چه چیزی به دست می‌آید' ); } ?>
+
+<?php
+if ( $on( 'opps' ) ) :
+	$op     = $a['opps_ai'];
+	$main   = (array) $op['main'];
+	$angles = array( 'کم‌رقابت' => 'a-easy', 'زودبازده' => 'a-fast', 'سودآور' => 'a-profit', 'شکاف رقبا' => 'a-gap', 'جایگاه فعلی شما' => 'a-foot' );
+	$cards  = array_slice( (array) $op['items'], 0, 4 );
+	$close  = $open( $section['plan'] . ' · فرصت‌های بازار', 'پیشنهاد اصلی ما و فرصت‌های بازار شما', '', 's-opps' );
+	?>
+	<?php if ( ! empty( $main['title'] ) ) : ?>
+		<div class="main-rec">
+			<span class="tag">پیشنهاد اصلی</span>
+			<b><?php echo esc_html( $main['title'] ); ?></b>
+			<?php if ( ! empty( $main['text'] ) ) : ?><p><?php echo esc_html( $main['text'] ); ?></p><?php endif; ?>
+		</div>
+	<?php endif; ?>
+	<div class="opp-cards n<?php echo (int) count( $cards ); ?>">
+		<?php foreach ( $cards as $c ) : $cls = $angles[ trim( (string) $c['angle'] ) ] ?? 'a-fast'; ?>
+			<div class="opp-card <?php echo esc_attr( $cls ); ?>">
+				<span class="ang"><?php echo esc_html( $c['angle'] ); ?></span>
+				<b><?php echo esc_html( $c['title'] ); ?></b>
+				<?php if ( ! empty( $c['keywords'] ) ) : ?><div class="kws"><?php foreach ( array_slice( (array) $c['keywords'], 0, 4 ) as $w ) { echo '<i>' . esc_html( $w ) . '</i>'; } ?></div><?php endif; ?>
+				<p><?php echo esc_html( $c['why'] ); ?></p>
+				<?php if ( ! empty( $c['potential'] ) ) : ?><em><?php echo esc_html( $c['potential'] ); ?></em><?php endif; ?>
+			</div>
+		<?php endforeach; ?>
+	</div>
+<?php $close(); endif; ?>
 
 <?php if ( $on( 'strategy' ) && ! empty( $sg['picks'] ) ) : $close = $open( $section['plan'] . ' · استراتژی شروع', 'استراتژی شروع: ' . $sg['name'], $sg['idea'], 's-strategy' ); ?>
 	<div class="grid g-strat">

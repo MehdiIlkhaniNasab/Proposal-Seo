@@ -363,7 +363,11 @@ body.ost-auth { min-height: 100vh; display: grid; place-items: center; backgroun
 .ost-final { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; padding: 12px 16px; border-radius: 14px; background: #E8F6EE; color: #13633F; }
 .ost-table tr.s-crawling td { background: #EFF8FF; }
 .ost-table tr.s-failed td { background: #FEF2F2; }
+.ost-table tr.is-skip td, .ost-table tr.s-skipped td { opacity: .55; }
 .ost-wrap code { background: var(--soft); padding: 1px 6px; border-radius: 6px; font-size: 12.5px; }
 .ost-cmd code { background: none; padding: 0; }
 .ost-warn-t { color: var(--warn); font-weight: 700; }
 .ost-wsteps li.is-done.is-open .body { display: block; }
+.ost-stack { display: flex; height: 34px; border-radius: 10px; overflow: hidden; gap: 2px; margin: 6px 0 14px; }
+.ost-stack i { display: grid; place-items: center; color: #fff; font-style: normal; font-weight: 800; font-size: 12px; min-width: 0; overflow: hidden; }
+.ost-dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; vertical-align: middle; }

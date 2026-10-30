@@ -24,10 +24,7 @@ add_action( 'rest_api_init', function () {
 		'permission_callback' => $auth,
 		'callback'            => function ( WP_REST_Request $req ) {
 			$p = ost_proposal( (int) $req['id'] );
-			$t = array();
-			foreach ( ost_domains( $p ) as $d => $role ) {
-				$t[] = array( 'domain' => $d, 'role' => $role );
-			}
+			$t = ost_sf_targets( $p, (bool) $req->get_param( 'force' ) );
 			if ( 'text' === $req->get_param( 'format' ) ) {
 				header( 'Content-Type: text/plain; charset=utf-8' );
 				echo implode( "\n", array_column( $t, 'domain' ) ); // phpcs:ignore WordPress.Security.EscapeOutput
@@ -55,22 +52,13 @@ add_action( 'rest_api_init', function () {
 		'callback'            => function ( WP_REST_Request $req ) {
 			$p      = ost_proposal( (int) $req['id'] );
 			$domain = ost_domain( (string) $req->get_param( 'domain' ) );
-			$audit  = ost_data( $p['id'], 'audit' )[ $domain ] ?? null;
-			if ( ! $audit ) {
-				try {
-					$audit = ost_site_audit( $domain, 3, (int) $p['inputs']['crawl_limit'] );
-				} catch ( Throwable $e ) {
-					$audit = new WP_Error( 'ost_audit', $e->getMessage() );
-				}
-				if ( ! is_wp_error( $audit ) ) {
-					ost_put_data( $p['id'], 'audit', $domain, $audit );
-				}
+			try {
+				$urls = ost_sf_important_urls( $p, $domain )['urls'];
+			} catch ( Throwable $e ) {
+				$urls = array( ost_home_url( $domain ) ); // Whatever happens, the agent gets the home page.
 			}
-			// Whatever happens, the agent gets at least the home page to crawl.
-			$urls = is_wp_error( $audit ) ? array() : (array) $audit['urls'];
-			array_unshift( $urls, ost_home_url( $domain ) );
 			header( 'Content-Type: text/plain; charset=utf-8' );
-			echo implode( "\n", array_slice( array_values( array_unique( $urls ) ), 0, (int) $p['inputs']['crawl_limit'] ) ); // phpcs:ignore WordPress.Security.EscapeOutput
+			echo implode( "\n", $urls ); // phpcs:ignore WordPress.Security.EscapeOutput
 			exit;
 		},
 	) );
@@ -78,6 +66,9 @@ add_action( 'rest_api_init', function () {
 		'methods'             => 'POST',
 		'permission_callback' => $auth,
 		'callback'            => function ( WP_REST_Request $req ) {
+			if ( function_exists( 'set_time_limit' ) ) {
+				@set_time_limit( 300 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors
+			}
 			$files = $req->get_file_params();
 			if ( empty( $files['file']['tmp_name'] ) ) {
 				return new WP_Error( 'ost_sf_nofile', 'فایلی ارسال نشد.', array( 'status' => 400 ) );
@@ -88,7 +79,11 @@ add_action( 'rest_api_init', function () {
 				return new WP_Error( 'ost_sf_domain', 'این دامنه در پروپوزال نیست.', array( 'status' => 400 ) );
 			}
 			$name = (string) ( $req->get_param( 'name' ) ?: $files['file']['name'] );
-			$r    = ost_sf_import( $p['id'], $domain, $files['file']['tmp_name'], $name );
+			try {
+				$r = ost_sf_import( $p['id'], $domain, $files['file']['tmp_name'], $name );
+			} catch ( Throwable $e ) {
+				$r = new WP_Error( 'ost_sf_import', 'خواندن فایل ناموفق بود: ' . $e->getMessage() );
+			}
 			if ( is_wp_error( $r ) ) {
 				return new WP_Error( $r->get_error_code(), $r->get_error_message(), array( 'status' => 422 ) );
 			}

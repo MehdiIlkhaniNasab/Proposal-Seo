@@ -47,7 +47,7 @@ $cost = $p ? ost_ss_cost_estimate( $p ) : null;
 		<div class="ost-grid g3">
 			<label>دامنه سایت کارفرما<input type="text" dir="ltr" name="in[domain]" value="<?php echo esc_attr( $val( 'domain' ) ); ?>" placeholder="example.ir"><small>اگر سایت ندارد خالی بگذارید؛ پروپوزال «شروع از صفر» ساخته می‌شود.</small></label>
 			<label>نام‌های برند (برای جدا کردن جستجوی برندی)<input type="text" name="in[brand_terms]" value="<?php echo esc_attr( implode( '، ', $in['brand_terms'] ) ); ?>" placeholder="آرامش، aramesh"></label>
-			<label>تعداد صفحات برای خزش اسکریمینگ فراگ<input type="text" name="in[crawl_limit]" value="<?php echo esc_attr( $val( 'crawl_limit' ) ); ?>"><small>از نقشه سایت هر دامنه؛ پیش‌فرض ۵۰۰.</small></label>
+			<label>تعداد صفحات برای خزش اسکریمینگ فراگ<input type="text" name="in[crawl_limit]" value="<?php echo esc_attr( $val( 'crawl_limit' ) ); ?>"><small>صفحات مهم و پرترافیک هر سایت؛ پیشنهاد ۳۰ (سریع).</small></label>
 		</div>
 		<div class="ost-checks">
 			<label class="ost-switch"><input type="checkbox" name="in[has_site]" value="1" <?php checked( $in['has_site'] ); ?>><span></span> کارفرما سایت فعال دارد</label>

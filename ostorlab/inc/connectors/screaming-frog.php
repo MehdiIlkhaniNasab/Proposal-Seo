@@ -398,7 +398,10 @@ function ost_sf_import( $id, $domain, $file, $name = '' ) {
  * Wizard state of a proposal: confirmed steps, OS, last ping of the agent.
  */
 function ost_sf_wizard( $id ) {
-	return wp_parse_args( (array) get_post_meta( $id, '_ost_sf_wizard', true ), array(
+	$w = get_post_meta( $id, '_ost_sf_wizard', true );
+	// Only named keys: (array) '' used to add a numeric key that doubled on every save (1.2.x).
+	$w = is_array( $w ) ? array_filter( $w, 'is_string', ARRAY_FILTER_USE_KEY ) : array();
+	return array_replace( array(
 		'installed'  => 0,
 		'os'         => 'win',
 		'downloaded' => 0,
@@ -406,11 +409,13 @@ function ost_sf_wizard( $id ) {
 		'ping'       => array(),
 		'crawl'      => array(),
 		'url_errors' => array(),
-	) );
+		'url_counts' => array(),
+		'skip'       => array(),
+	), $w );
 }
 
 function ost_sf_wizard_save( $id, $changes ) {
-	update_post_meta( $id, '_ost_sf_wizard', array_merge( ost_sf_wizard( $id ), $changes ) );
+	update_post_meta( $id, '_ost_sf_wizard', array_replace( ost_sf_wizard( $id ), array_filter( (array) $changes, 'is_string', ARRAY_FILTER_USE_KEY ) ) );
 }
 
 /**
@@ -441,28 +446,107 @@ function ost_sf_record_ping( $id, $data ) {
 }
 
 /**
+ * The most important URLs of a domain for the crawl, most important first:
+ * home page, pages that get traffic (Search Console for the client, SEO Signal's
+ * ranking pages for everyone), then sitemap pages to fill up to the limit.
+ *
+ * @return array{urls: string[], traffic: int, sitemap: int, error: string}
+ */
+function ost_sf_important_urls( $p, $domain, $build = true ) {
+	$id    = $p['id'];
+	$limit = max( 5, (int) $p['inputs']['crawl_limit'] );
+	$audit = ost_data( $id, 'audit' )[ $domain ] ?? null;
+	$base  = $audit && ! empty( $audit['final'] ) ? trailingslashit( preg_replace( '#^(https?://[^/]+).*$#', '$1', $audit['final'] ) ) : ost_home_url( $domain );
+	$urls  = array( $base => true );
+	$abs   = function ( $path ) use ( $base ) {
+		return preg_match( '#^https?://#i', $path ) ? $path : $base . ltrim( (string) $path, '/' );
+	};
+	// Pages with traffic.
+	if ( 'client' === ( ost_domains( $p )[ $domain ] ?? '' ) ) {
+		foreach ( (array) ( ost_data( $id, 'gsc' )['pages'] ?? array() ) as $pg ) {
+			$urls[ $pg['page'] ] = true;
+		}
+	}
+	$pages = (array) ( ost_data( $id, 'seosignal' )[ $domain ]['pages'] ?? array() );
+	usort( $pages, function ( $a, $b ) {
+		return $b['n'] <=> $a['n'];
+	} );
+	foreach ( $pages as $pg ) {
+		$urls[ $abs( $pg['p'] ) ] = true;
+	}
+	$traffic = count( $urls ) - 1;
+	$error   = '';
+	// Fill up from the sitemap (read it only when needed).
+	if ( count( $urls ) < $limit ) {
+		if ( ! $audit && $build ) {
+			try {
+				$audit = ost_site_audit( $domain, 3, $limit );
+			} catch ( Throwable $e ) {
+				$audit = new WP_Error( 'ost_audit', $e->getMessage() );
+			}
+			if ( is_wp_error( $audit ) ) {
+				$error = $audit->get_error_message();
+				$audit = null;
+			} else {
+				ost_put_data( $id, 'audit', $domain, $audit );
+			}
+		}
+		foreach ( (array) ( $audit['urls'] ?? array() ) as $u ) {
+			if ( count( $urls ) >= $limit ) {
+				break;
+			}
+			$urls[ $u ] = true;
+		}
+	}
+	$list = array_slice( array_keys( $urls ), 0, $limit );
+	return array( 'urls' => $list, 'traffic' => min( $traffic, count( $list ) - 1 ), 'sitemap' => max( 0, count( $list ) - 1 - $traffic ), 'error' => $error );
+}
+
+/**
+ * Domains to crawl now: not skipped, and (unless forced) not received yet — so a run that
+ * stopped half-way continues where it stopped.
+ */
+function ost_sf_targets( $p, $force = false ) {
+	$w    = ost_sf_wizard( $p['id'] );
+	$sf   = ost_data( $p['id'], 'sf' );
+	$skip = array_flip( (array) $w['skip'] );
+	$out  = array();
+	foreach ( ost_domains( $p ) as $d => $role ) {
+		if ( isset( $skip[ $d ] ) ) {
+			continue;
+		}
+		$out[] = array( 'domain' => $d, 'role' => $role, 'done' => ! empty( $sf[ $d ]['internal'] ) );
+	}
+	return $force ? $out : array_values( array_filter( $out, function ( $t ) {
+		return ! $t['done'];
+	} ) );
+}
+
+/**
  * Everything the wizard screen shows (also polled by the page).
  */
 function ost_sf_status( $id ) {
 	$p     = ost_proposal( $id );
 	$w     = ost_sf_wizard( $id );
 	$sf    = ost_data( $id, 'sf' );
-	$audit = ost_data( $id, 'audit' );
 	$ping  = (array) $w['ping'];
 	$age   = $ping ? time() - (int) $ping['at'] : null;
 	$doms  = array();
 	$all   = true;
+	$skip  = array_flip( (array) $w['skip'] );
 	foreach ( ost_domains( $p ) as $d => $role ) {
 		$got  = array_values( array_intersect( array( 'internal', 'inlinks', 'redirects' ), array_keys( (array) ( $sf[ $d ] ?? array() ) ) ) );
 		$c    = $w['crawl'][ $d ] ?? array();
-		$all  = $all && in_array( 'internal', $got, true );
+		$all  = $all && ( isset( $skip[ $d ] ) || in_array( 'internal', $got, true ) );
 		$doms[] = array(
 			'domain' => $d,
 			'role'   => $role,
-			'urls'   => isset( $audit[ $d ] ) ? min( (int) $p['inputs']['crawl_limit'], count( (array) ( $audit[ $d ]['urls'] ?? array() ) ) + 1 ) : ( isset( $w['url_errors'][ $d ] ) ? 1 : null ),
+			'skip'   => isset( $skip[ $d ] ),
+			'urls'   => isset( $w['url_counts'][ $d ] ) ? (int) $w['url_counts'][ $d ]['n'] : null,
+			'traffic' => (int) ( $w['url_counts'][ $d ]['traffic'] ?? 0 ),
 			'url_error' => (string) ( $w['url_errors'][ $d ] ?? '' ),
 			'got'    => $got,
-			'stage'  => $c['stage'] ?? ( $got ? 'uploaded' : 'waiting' ),
+			'stage'  => isset( $skip[ $d ] ) ? 'skipped' : ( $c['stage'] ?? ( $got ? 'uploaded' : 'waiting' ) ),
 			'note'   => $c['note'] ?? '',
 			'at'     => isset( $sf[ $d ]['at'] ) ? ost_ago( $sf[ $d ]['at'] ) : '',
 			'pages'  => (int) ( $sf[ $d ]['internal']['urls'] ?? 0 ),
@@ -477,7 +561,8 @@ function ost_sf_status( $id ) {
 		'ping'       => $ping ? array_merge( $ping, array( 'ago' => ost_ago( $ping['at'] ) ) ) : null,
 		'urls_ok'    => (bool) $w['urls_ok'],
 		'domains'    => $doms,
-		'all_done'   => $all && (bool) $doms,
+		'all_done'   => $all && count( $skip ) < count( $doms ),
+		'limit'      => (int) $p['inputs']['crawl_limit'],
 	);
 }
 
@@ -499,9 +584,10 @@ function ost_sf_agent_script( $p, $os ) {
   Ostorlab (Ronagh) - Screaming Frog agent for Windows.  Proposal: {{NAME}}  Generated {{DATE}}
   Test the connection:  powershell -ExecutionPolicy Bypass -File {{NAME}}.ps1 -Test
   Crawl and send:       powershell -ExecutionPolicy Bypass -File {{NAME}}.ps1
-  Options: -Mode spider -Config "C:\path\limit-500.seospiderconfig"  |  -SpiderPath "C:\...\ScreamingFrogSEOSpiderCli.exe"  |  -Only "competitor.ir"
+  Stopped half-way? Run the same command again: domains already received are skipped. -Force crawls all again.
+  Options: -Force  |  -Mode spider -Config "C:\path\limit.seospiderconfig"  |  -SpiderPath "C:\...\ScreamingFrogSEOSpiderCli.exe"  |  -Only "competitor.ir"
 #>
-param([switch]$Test, [string]$Mode = "list", [string]$Config = "", [string]$SpiderPath = "", [string]$Only = "")
+param([switch]$Test, [switch]$Force, [string]$Mode = "list", [string]$Config = "", [string]$SpiderPath = "", [string]$Only = "")
 $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $Base = "{{BASE}}"; $Key = "{{KEY}}"; $Headers = @{ "X-Ostorlab-Key" = $Key }
@@ -521,7 +607,9 @@ if ($Found) { Write-Host "[Ostorlab] Screaming Frog found: $SpiderPath" } else {
 if ($Test) { Write-Host "[Ostorlab] Test finished. Go back to Ostorlab: step 3 is checked automatically."; exit 0 }
 if (-not $Found) { exit 1 }
 Send-Ping "start"
-$targets = (Invoke-RestMethod -Uri "$Base/targets" -Headers $Headers).targets
+$targets = @((Invoke-RestMethod -Uri ("$Base/targets" + $(if ($Force) { "?force=1" } else { "" })) -Headers $Headers).targets)
+if ($targets.Count -eq 0) { Write-Host "[Ostorlab] Every domain has already been received. Use -Force to crawl again."; Send-Ping "done"; exit 0 }
+Write-Host "[Ostorlab] Domains to crawl: $(($targets | ForEach-Object { $_.domain }) -join ', ')"
 $sets = @(
   @("--bulk-export", "Links:All Inlinks", "--save-report", "Redirects:All Redirects"),
   @("--bulk-export", "All Inlinks", "--save-report", "Redirect & Canonical Chains"),
@@ -532,6 +620,7 @@ foreach ($t in $targets) {
   if ($Only -and $domain -ne $Only) { continue }
   Write-Host "[Ostorlab] === $domain ($($t.role)) ==="
   Send-Ping "crawling" $domain
+  try {
   $out = Join-Path $env:TEMP ("ostorlab-" + $domain + "-" + (Get-Date -Format "yyyyMMddHHmmss"))
   New-Item -ItemType Directory -Path $out | Out-Null
   $args0 = @("--headless", "--output-folder", $out, "--export-tabs", "Internal:All", "--overwrite")
@@ -561,9 +650,14 @@ foreach ($t in $targets) {
     Write-Host "[Ostorlab] Uploading $($f.Name) ($([Math]::Round((Get-Item $gz).Length / 1MB, 1)) MB) ..."
     $r = & curl.exe -sS -X POST ("$Base" + "?domain=" + $domain) -H "X-Ostorlab-Key: $Key" -F "file=@$gz;type=application/gzip" -F "name=$($f.Name)"
     Write-Host $r
+    if ($LASTEXITCODE -ne 0 -or "$r" -notmatch '"ok":true') { throw "upload of $($f.Name) failed" }
   }
   Send-Ping "uploaded" $domain
   Remove-Item -Recurse -Force $out
+  } catch {
+    Write-Warning "[Ostorlab] $domain failed: $($_.Exception.Message) - continuing with the next domain."
+    Send-Ping "failed" $domain ([string]$_.Exception.Message)
+  }
 }
 Send-Ping "done"
 Write-Host "[Ostorlab] Done. Go back to Ostorlab: step 5 shows the result."
@@ -575,12 +669,13 @@ PS1
 # Ostorlab (Ronagh) - Screaming Frog agent for macOS / Linux.  Proposal: {{NAME}}  Generated {{DATE}}
 #   Test the connection:  bash {{NAME}}.sh --test
 #   Crawl and send:       bash {{NAME}}.sh
-#   Options:  --mode spider --config limit-500.seospiderconfig   --spider /path/to/cli   --only competitor.ir
+#   Stopped half-way? Run it again: domains already received are skipped (--force crawls all again).
+#   Options:  --force   --mode spider --config limit.seospiderconfig   --spider /path/to/cli   --only competitor.ir
 set -uo pipefail
-BASE="{{BASE}}"; KEY="{{KEY}}"; MODE="list"; CONFIG=""; SPIDER="${SF_SPIDER:-}"; ONLY=""; TEST=0
+BASE="{{BASE}}"; KEY="{{KEY}}"; MODE="list"; CONFIG=""; SPIDER="${SF_SPIDER:-}"; ONLY=""; TEST=0; FORCE=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --test) TEST=1; shift ;; --mode) MODE="$2"; shift 2 ;; --config) CONFIG="$2"; shift 2 ;;
+    --test) TEST=1; shift ;; --force) FORCE="&force=1"; shift ;; --mode) MODE="$2"; shift 2 ;; --config) CONFIG="$2"; shift 2 ;;
     --spider) SPIDER="$2"; shift 2 ;; --only) ONLY="$2"; shift 2 ;;
     *) echo "Unknown option $1" >&2; exit 1 ;;
   esac
@@ -602,7 +697,7 @@ $FOUND && echo "[Ostorlab] Screaming Frog found: $SPIDER" || echo "[Ostorlab] WA
 [[ $TEST == 1 ]] && { echo "[Ostorlab] Test finished. Go back to Ostorlab: step 3 is checked automatically."; exit 0; }
 $FOUND || exit 1
 ping_ost start
-for DOMAIN in $(curl -fsS "$BASE/targets?format=text" -H "X-Ostorlab-Key: $KEY"); do
+for DOMAIN in $(curl -fsS "$BASE/targets?format=text$FORCE" -H "X-Ostorlab-Key: $KEY"); do
   [[ -n "$ONLY" && "$DOMAIN" != "$ONLY" ]] && continue
   echo "[Ostorlab] === $DOMAIN ==="
   ping_ost crawling "$DOMAIN"
@@ -621,11 +716,14 @@ for DOMAIN in $(curl -fsS "$BASE/targets?format=text" -H "X-Ostorlab-Key: $KEY")
     [[ -f "$OUT/internal_all.csv" ]] && break
   done
   if [[ ! -f "$OUT/internal_all.csv" ]]; then ping_ost failed "$DOMAIN" "internal_all.csv was not produced (licence? language must be English)"; rm -rf "$OUT"; continue; fi
+  FAIL=""
   while IFS= read -r -d '' F; do
     gzip -c "$F" > "$F.gz"
     echo "[Ostorlab] Uploading $(basename "$F") ..."
-    curl -sS -X POST "$BASE?domain=$DOMAIN" -H "X-Ostorlab-Key: $KEY" -F "file=@$F.gz" -F "name=$(basename "$F")"; echo
+    R="$(curl -sS -X POST "$BASE?domain=$DOMAIN" -H "X-Ostorlab-Key: $KEY" -F "file=@$F.gz" -F "name=$(basename "$F")")"; echo "$R"
+    [[ "$R" == *'"ok":true'* ]] || FAIL="upload of $(basename "$F") failed"
   done < <(find "$OUT" -name '*.csv' -print0)
+  if [[ -n "$FAIL" ]]; then echo "[Ostorlab] $DOMAIN: $FAIL - run again later to retry; continuing." >&2; ping_ost failed "$DOMAIN" "$FAIL"; rm -rf "$OUT"; continue; fi
   ping_ost uploaded "$DOMAIN"
   rm -rf "$OUT"
 done
