@@ -199,6 +199,11 @@ function ost_job_step( $p, $key ) {
 				if ( 'ost_ss_cap' === $err->get_error_code() ) {
 					return $err;
 				}
+				if ( 'ost_ss_request_failed' === $err->get_error_code() ) {
+					// SEO Signal has no reportage recorded for this domain: that is a result (zero), not an error.
+					ost_put_data( $id, 'reportage', $arg, array( 'reportages' => array( 'PRList' => array() ), 'anchors' => array(), 'pages' => array() ) );
+					return 'رپورتاژی برای این دامنه در سئو سیگنال ثبت نشده (صفر)';
+				}
 				ost_put_data( $id, 'reportage', $arg, array( 'error' => $err->get_error_message() ) );
 				return $err;
 			}

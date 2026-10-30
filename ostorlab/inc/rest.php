@@ -57,11 +57,16 @@ add_action( 'rest_api_init', function () {
 			$domain = ost_domain( (string) $req->get_param( 'domain' ) );
 			$audit  = ost_data( $p['id'], 'audit' )[ $domain ] ?? null;
 			if ( ! $audit ) {
-				$audit = ost_site_audit( $domain, 3, (int) $p['inputs']['crawl_limit'] );
+				try {
+					$audit = ost_site_audit( $domain, 3, (int) $p['inputs']['crawl_limit'] );
+				} catch ( Throwable $e ) {
+					$audit = new WP_Error( 'ost_audit', $e->getMessage() );
+				}
 				if ( ! is_wp_error( $audit ) ) {
 					ost_put_data( $p['id'], 'audit', $domain, $audit );
 				}
 			}
+			// Whatever happens, the agent gets at least the home page to crawl.
 			$urls = is_wp_error( $audit ) ? array() : (array) $audit['urls'];
 			array_unshift( $urls, ost_home_url( $domain ) );
 			header( 'Content-Type: text/plain; charset=utf-8' );

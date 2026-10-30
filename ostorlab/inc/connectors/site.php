@@ -44,6 +44,17 @@ function ost_site_get( $url, $timeout = 15 ) {
 }
 
 /**
+ * Can this host read URLs in parallel (curl_multi_* available and not disabled)?
+ */
+function ost_curl_multi_ok() {
+	if ( ! function_exists( 'curl_multi_init' ) || ! function_exists( 'curl_multi_exec' ) ) {
+		return false;
+	}
+	$disabled = array_map( 'trim', explode( ',', (string) ini_get( 'disable_functions' ) ) );
+	return ! array_intersect( array( 'curl_multi_init', 'curl_multi_exec', 'curl_multi_select', 'curl_multi_add_handle' ), $disabled );
+}
+
+/**
  * Read several URLs in parallel.
  *
  * @return array url => [code, body, ms] (or ['error' => msg])
@@ -58,15 +69,29 @@ function ost_site_get_many( $urls, $timeout = 15 ) {
 		$requests[ $i ] = array( 'url' => $u, 'type' => 'GET', 'headers' => ost_site_headers() );
 	}
 	$class = class_exists( '\WpOrg\Requests\Requests' ) ? '\WpOrg\Requests\Requests' : ( class_exists( 'Requests' ) ? 'Requests' : '' );
-	if ( '' === $class ) {
+	// Parallel reading needs curl_multi_*; many shared hosts disable it (disable_functions).
+	$res = null;
+	if ( '' !== $class && ost_curl_multi_ok() ) {
+		try {
+			$t   = microtime( true );
+			$res = $class::request_multiple( $requests, array( 'timeout' => $timeout, 'connect_timeout' => 8, 'redirects' => 5, 'verify' => false ) );
+			$ms  = (int) round( 1000 * ( microtime( true ) - $t ) );
+		} catch ( Throwable $e ) {
+			$res = null;
+		}
+	}
+	if ( null === $res ) {
+		// One by one, with a shorter timeout and a total time budget.
+		$t0 = microtime( true );
 		foreach ( $urls as $u ) {
-			$r         = ost_site_get( $u, $timeout );
+			if ( microtime( true ) - $t0 > 40 ) {
+				break;
+			}
+			$r         = ost_site_get( $u, min( $timeout, 8 ) );
 			$out[ $u ] = is_wp_error( $r ) ? array( 'error' => $r->get_error_message() ) : $r;
 		}
 		return $out;
 	}
-	$t   = microtime( true );
-	$res = $class::request_multiple( $requests, array( 'timeout' => $timeout, 'connect_timeout' => 8, 'redirects' => 5, 'verify' => false ) );
 	$ms  = (int) round( 1000 * ( microtime( true ) - $t ) );
 	foreach ( array_values( $urls ) as $i => $u ) {
 		$r = $res[ $i ] ?? null;

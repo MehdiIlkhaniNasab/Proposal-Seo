@@ -538,7 +538,8 @@ foreach ($t in $targets) {
   if ($Mode -eq "spider") { $args0 = @("--crawl", "https://$domain/") + $args0 }
   else {
     $list = Join-Path $out "urls.txt"
-    Invoke-WebRequest -Uri ("$Base/urls?domain=" + [uri]::EscapeDataString($domain)) -Headers $Headers -OutFile $list -UseBasicParsing
+    try { Invoke-WebRequest -Uri ("$Base/urls?domain=" + [uri]::EscapeDataString($domain)) -Headers $Headers -OutFile $list -UseBasicParsing }
+    catch { Write-Warning "Could not get the URL list ($($_.Exception.Message)); crawling from the home page."; Set-Content -Path $list -Value "https://$domain/" -Encoding UTF8 }
     Write-Host "[Ostorlab] URLs to crawl: $((Get-Content $list).Count)"
     $args0 = @("--crawl-list", $list) + $args0
   }
@@ -609,7 +610,7 @@ for DOMAIN in $(curl -fsS "$BASE/targets?format=text" -H "X-Ostorlab-Key: $KEY")
   ARGS=(--headless --output-folder "$OUT" --export-tabs "Internal:All" --overwrite)
   if [[ "$MODE" == "spider" ]]; then ARGS=(--crawl "https://$DOMAIN/" "${ARGS[@]}")
   else
-    curl -fsS "$BASE/urls?domain=$DOMAIN" -H "X-Ostorlab-Key: $KEY" -o "$OUT/urls.txt"
+    curl -fsS "$BASE/urls?domain=$DOMAIN" -H "X-Ostorlab-Key: $KEY" -o "$OUT/urls.txt" || { echo "[Ostorlab] Could not get the URL list; crawling from the home page." >&2; echo "https://$DOMAIN/" > "$OUT/urls.txt"; }
     echo "[Ostorlab] URLs to crawl: $(wc -l < "$OUT/urls.txt")"
     ARGS=(--crawl-list "$OUT/urls.txt" "${ARGS[@]}")
   fi
