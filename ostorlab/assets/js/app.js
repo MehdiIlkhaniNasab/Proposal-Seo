@@ -380,4 +380,62 @@
 			}, 0 );
 		}
 	} ) );
+	// Manual keyword import: paste / file tabs, drop zone, live preview of the pasted rows.
+	document.querySelectorAll( '[data-kwi]' ).forEach( ( form ) => {
+		const panes = form.querySelectorAll( '[data-kwi-pane]' );
+		form.querySelectorAll( '[data-kwi-tab]' ).forEach( ( t ) => t.addEventListener( 'click', () => {
+			form.querySelectorAll( '[data-kwi-tab]' ).forEach( ( x ) => x.classList.toggle( 'on', x === t ) );
+			panes.forEach( ( p ) => ( p.hidden = p.dataset.kwiPane !== t.dataset.kwiTab ) );
+			preview();
+		} ) );
+		const drop = form.querySelector( '.kwi-drop' );
+		const file = form.querySelector( 'input[type=file]' );
+		const fname = form.querySelector( '[data-kwi-fname]' );
+		const fnameDefault = fname ? fname.textContent : '';
+		if ( drop && file ) {
+			[ 'dragenter', 'dragover' ].forEach( ( ev ) => drop.addEventListener( ev, () => drop.classList.add( 'is-over' ) ) );
+			[ 'dragleave', 'drop' ].forEach( ( ev ) => drop.addEventListener( ev, () => drop.classList.remove( 'is-over' ) ) );
+			file.addEventListener( 'change', () => {
+				const f = file.files[ 0 ];
+				drop.classList.toggle( 'has-file', !! f );
+				fname.textContent = f ? '✓ ' + f.name + ' (' + fa( String( Math.max( 1, Math.round( f.size / 1024 ) ) ) ) + ' کیلوبایت)' : fnameDefault;
+			} );
+		}
+		const text = form.querySelector( '.kwi-text' );
+		const box = form.querySelector( '[data-kwi-preview]' );
+		const num = ( s ) => String( s || '' ).replace( /[۰-۹]/g, ( d ) => '۰۱۲۳۴۵۶۷۸۹'.indexOf( d ) ).replace( /[^0-9]/g, '' );
+		const preview = () => {
+			if ( ! text || ! box ) {
+				return;
+			}
+			const rows = [];
+			text.value.split( /\r?\n/ ).forEach( ( line ) => {
+				const cols = line.split( /\t|;|\|/ ).map( ( c ) => c.trim() );
+				if ( ! cols[ 0 ] ) {
+					return;
+				}
+				const v = cols[ 1 ] || '';
+				if ( v && ! /^[0-9۰-۹.,٬\s]+$/.test( v ) ) {
+					return; // Header row.
+				}
+				rows.push( { w: cols[ 0 ], v: num( v ), g: cols[ 2 ] || '' } );
+			} );
+			if ( ! box.dataset.sample ) {
+				box.dataset.sample = box.innerHTML; // The example shown before anything is pasted.
+			}
+			box.hidden = !! text.closest( '[hidden]' );
+			if ( ! rows.length ) {
+				box.innerHTML = box.dataset.sample;
+				box.classList.add( 'is-sample' );
+				return;
+			}
+			box.classList.remove( 'is-sample' );
+			const groups = new Set( rows.map( ( r ) => r.g ).filter( Boolean ) );
+			const auto = rows.filter( ( r ) => ! r.v ).length;
+			box.innerHTML = '<div class="sum"><span><b>' + fa( String( rows.length ) ) + '</b> کلمه</span><span><b>' + fa( String( groups.size ) ) + '</b> گروه</span>' + ( auto ? '<span><b>' + fa( String( auto ) ) + '</b> کلمه بدون حجم (از سئو سیگنال گرفته می‌شود)</span>' : '' ) + '</div><table><thead><tr><th>کلمه</th><th class="v">جستجوی ماهانه</th><th class="g">گروه</th></tr></thead><tbody>' + rows.slice( 0, 6 ).map( ( r ) => '<tr><td>' + esc( r.w ) + '</td><td class="v">' + ( r.v ? fa( Number( r.v ).toLocaleString( 'en-US' ) ) : '<span class="auto">خودکار</span>' ) + '</td><td class="g">' + esc( r.g || '—' ) + '</td></tr>' ).join( '' ) + ( rows.length > 6 ? '<tr><td colspan="3" class="g">و ' + fa( String( rows.length - 6 ) ) + ' کلمه دیگر…</td></tr>' : '' ) + '</tbody></table>';
+		};
+		if ( text ) {
+			text.addEventListener( 'input', preview );
+		}
+	} );
 }() );

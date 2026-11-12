@@ -13,31 +13,101 @@ defined( 'ABSPATH' ) || exit;
 $id  = $p['id'];
 $man = ost_manual_kw( $id );
 ?>
-<details class="ost-panel ost-import" <?php echo $man['rows'] ? '' : 'open'; ?>>
-	<summary><b><?php echo ost_icon( 'download', 16 ); // phpcs:ignore ?> ورود کلمات دستی (اکسل، CSV یا کپی)</b>
-		<small class="ost-muted"><?php echo $man['rows'] ? esc_html( sprintf( '%s کلمه ثبت شده · %s', ost_num( count( $man['rows'] ) ), 'only' === $man['mode'] ? 'تحلیل فقط با همین کلمات' : 'همراه کلمات سئو سیگنال' ) ) : 'اختیاری'; ?></small>
+<?php
+$mgroups = array();
+foreach ( $man['rows'] as $r ) {
+	$g = '' !== $r['g'] ? $r['g'] : 'بدون گروه';
+	if ( ! isset( $mgroups[ $g ] ) ) {
+		$mgroups[ $g ] = array( 'n' => 0, 'v' => 0 );
+	}
+	$mgroups[ $g ]['n']++;
+	$mgroups[ $g ]['v'] += (int) $r['v'];
+}
+?>
+<details class="ost-panel kwi" <?php echo $man['rows'] ? '' : 'open'; ?>>
+	<summary class="kwi-head">
+		<span class="kwi-icon"><?php echo ost_icon( 'download', 22 ); // phpcs:ignore ?></span>
+		<span class="kwi-title">
+			<b>کلمات کلیدی خودتان را اضافه کنید</b>
+			<small>از اکسل کپی کنید یا فایل بدهید؛ تحلیل و پروپوزال این کلمات را هم حساب می‌کند.</small>
+		</span>
+		<?php if ( $man['rows'] ) : ?>
+			<span class="kwi-badge on"><?php echo esc_html( ost_num( count( $man['rows'] ) ) . ' کلمه · ' . ( 'only' === $man['mode'] ? 'فقط همین کلمات' : 'همراه سئو سیگنال' ) ); ?></span>
+		<?php else : ?>
+			<span class="kwi-badge">اختیاری</span>
+		<?php endif; ?>
+		<span class="kwi-chev" aria-hidden="true"></span>
 	</summary>
-	<form method="post" enctype="multipart/form-data" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+
+	<?php if ( $mgroups ) : ?>
+		<div class="kwi-current">
+			<span class="lbl">فهرست فعلی شما</span>
+			<?php foreach ( $mgroups as $g => $x ) : ?>
+				<span class="kwi-chip"><b><?php echo esc_html( $g ); ?></b> <?php echo esc_html( ost_num( $x['n'] ) ); ?> کلمه · <?php echo esc_html( ost_compact( $x['v'] ) ); ?> جستجو</span>
+			<?php endforeach; ?>
+		</div>
+	<?php endif; ?>
+
+	<form method="post" enctype="multipart/form-data" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="kwi-form" data-kwi>
 		<?php ost_form_fields( 'ost_kw_import' ); ?><input type="hidden" name="id" value="<?php echo (int) $id; ?>">
-		<p class="ost-muted">ستون‌ها به ترتیب: <b>کلمه</b>، <b>جستجوی ماهانه</b> (اختیاری؛ خالی باشد از سئو سیگنال گرفته می‌شود)، <b>گروه</b> (اختیاری؛ هر گروه یک خوشه در پروپوزال می‌شود). سطر عنوان خودکار رد می‌شود. کلمات شما معتبر حساب می‌شوند و فقط حذف‌های خودتان رویشان اعمال می‌شود.</p>
-		<div class="ost-grid g2">
-			<label class="ost-field">ستون‌ها را از اکسل کپی کنید و اینجا بچسبانید
-				<textarea name="kw_text" rows="6" dir="auto" placeholder="خرید گیتار آکوستیک	2400	گیتار&#10;آموزش گیتار مقدماتی	1900	آموزش"></textarea>
-			</label>
-			<div>
-				<label class="ost-field">یا فایل (xlsx، csv، txt)
-					<input type="file" name="kw_file" accept=".xlsx,.csv,.txt">
-				</label>
-				<div class="ost-field">نقش این کلمات
-					<label class="ost-check"><input type="radio" name="mode" value="add" <?php checked( 'add', $man['mode'] ); ?>> همراه کلمات سئو سیگنال و عمق بازار</label>
-					<label class="ost-check"><input type="radio" name="mode" value="only" <?php checked( 'only', $man['mode'] ); ?>> تحلیل فقط با همین کلمات</label>
+
+		<div class="kwi-step">
+			<div class="kwi-step-head"><span class="n">۱</span><b>کلمات را بیاورید</b>
+				<div class="kwi-tabs" role="tablist">
+					<button type="button" class="on" data-kwi-tab="paste"><?php echo ost_icon( 'copy', 15 ); // phpcs:ignore ?> چسباندن از اکسل</button>
+					<button type="button" data-kwi-tab="file"><?php echo ost_icon( 'download', 15 ); // phpcs:ignore ?> آپلود فایل</button>
 				</div>
-				<label class="ost-check"><input type="checkbox" name="append" value="1"> به فهرست قبلی اضافه شود (وگرنه جایگزین می‌شود)</label>
+			</div>
+			<div class="kwi-pane" data-kwi-pane="paste">
+				<textarea name="kw_text" rows="6" dir="auto" class="kwi-text" placeholder="در اکسل ستون‌های «کلمه»، «جستجوی ماهانه» و «گروه» را انتخاب و کپی کنید، بعد اینجا بچسبانید (Ctrl+V)"></textarea>
+				<p class="kwi-hint">فقط ستون کلمه الزامی است · حجم خالی باشد، از سئو سیگنال گرفته می‌شود · هر گروه یک خوشه در پروپوزال می‌شود · سطر عنوان خودکار رد می‌شود.</p>
+			</div>
+			<div class="kwi-pane" data-kwi-pane="file" hidden>
+				<label class="kwi-drop">
+					<input type="file" name="kw_file" accept=".xlsx,.csv,.txt">
+					<span class="kwi-drop-ic"><?php echo ost_icon( 'download', 28 ); // phpcs:ignore ?></span>
+					<b data-kwi-fname>فایل را اینجا رها کنید یا کلیک کنید</b>
+					<small>اکسل (xlsx)، CSV یا TXT · برگه اول خوانده می‌شود · همان ترتیب ستون‌ها: کلمه، جستجوی ماهانه، گروه</small>
+				</label>
+			</div>
+			<div class="kwi-preview is-sample" data-kwi-preview>
+				<div class="sum"><span class="tag">نمونه</span> بعد از چسباندن، کلمات شما همین‌جا به این شکل نمایش داده می‌شوند</div>
+				<table>
+					<thead><tr><th>کلمه</th><th class="v">جستجوی ماهانه</th><th class="g">گروه</th></tr></thead>
+					<tbody>
+						<tr><td>خرید گیتار آکوستیک</td><td class="v">۲٬۴۰۰</td><td class="g">گیتار</td></tr>
+						<tr><td>آموزش گیتار مقدماتی</td><td class="v">۱٬۹۰۰</td><td class="g">آموزش</td></tr>
+						<tr><td>کلاس گیتار آنلاین</td><td class="v"><span class="auto">خودکار</span></td><td class="g">آموزش</td></tr>
+					</tbody>
+				</table>
 			</div>
 		</div>
-		<div class="ost-row">
-			<button class="ost-btn primary" data-busy="در حال ثبت و گرفتن حجم‌ها…">ثبت کلمات</button>
-			<?php if ( $man['rows'] ) : ?><button class="ost-btn ghost" name="clear" value="1" data-confirm="فهرست کلمات دستی حذف شود؟">حذف فهرست دستی</button><?php endif; ?>
+
+		<div class="kwi-step">
+			<div class="kwi-step-head"><span class="n">۲</span><b>این کلمات چه نقشی در تحلیل دارند؟</b></div>
+			<div class="kwi-modes">
+				<label class="kwi-mode">
+					<input type="radio" name="mode" value="add" <?php checked( 'add', $man['mode'] ); ?>>
+					<span class="box"><b>اضافه به تحلیل</b><small>کنار کلمات سئو سیگنال و عمق بازار رقبا؛ بازار کامل‌تر می‌شود.</small></span>
+				</label>
+				<label class="kwi-mode">
+					<input type="radio" name="mode" value="only" <?php checked( 'only', $man['mode'] ); ?>>
+					<span class="box"><b>فقط همین کلمات</b><small>تحقیق کلمات سئو سیگنال انجام نمی‌شود؛ بازار و پروپوزال فقط از فهرست شما ساخته می‌شود.</small></span>
+				</label>
+			</div>
+			<?php if ( $man['rows'] ) : ?>
+				<label class="kwi-switch">
+					<input type="checkbox" name="append" value="1">
+					<span class="track"><i></i></span>
+					<span>به فهرست فعلی اضافه شود <small>(خاموش = فهرست قبلی با این فهرست جایگزین می‌شود)</small></span>
+				</label>
+			<?php endif; ?>
+		</div>
+
+		<div class="kwi-foot">
+			<button class="ost-btn primary" data-busy="در حال ثبت و گرفتن حجم‌ها…"><?php echo ost_icon( 'play', 16 ); // phpcs:ignore ?> ثبت کلمات و به‌روزرسانی تحلیل</button>
+			<?php if ( $man['rows'] ) : ?><button class="ost-btn ghost" name="clear" value="1" data-confirm="فهرست کلمات دستی حذف شود؟">حذف فهرست فعلی</button><?php endif; ?>
+			<small class="ost-muted">کلمات شما معتبر حساب می‌شوند؛ فقط حذف‌هایی که خودتان انجام دهید رویشان اعمال می‌شود.</small>
 		</div>
 	</form>
 </details>
