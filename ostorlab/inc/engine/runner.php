@@ -37,8 +37,11 @@ function ost_job_plan( $p, $fresh = false ) {
 			$steps['discover']['status'] = 'pending';
 		}
 	}
-	foreach ( $in['keywords'] as $kw ) {
-		$add( 'kw:' . $kw, 'تحقیق کلمه «' . $kw . '»' );
+	$man = ost_manual_kw( $p['id'] );
+	if ( 'only' !== $man['mode'] || ! $man['rows'] ) { // "Only my keywords": no seed research.
+		foreach ( $in['keywords'] as $kw ) {
+			$add( 'kw:' . $kw, 'تحقیق کلمه «' . $kw . '»' );
+		}
 	}
 	foreach ( ost_domains( $p ) as $d => $role ) {
 		$add( 'site:' . $d, 'کلمات و صفحات ' . $d );
@@ -318,6 +321,7 @@ function ost_job_step( $p, $key ) {
 function ost_compute( $id ) {
 	$p       = ost_proposal( $id );
 	$in      = $p['inputs'];
+	$GLOBALS['ost_biz_type'] = $in['business_type']; // Intents and labels depend on it (education: «دوره» = buyer).
 	$est     = ost_estimate_settings( $id ); // The manager's estimate settings (close / lead rate apply to competitors too).
 	$in['close_rate'] = (float) $est['close_rate'];
 	$in['lead_rate']  = (float) $est['lead_rate'];
@@ -331,12 +335,7 @@ function ost_compute( $id ) {
 	$sf      = ost_data( $id, 'sf' );
 	$gaps    = ost_data( $id, 'gap' );
 	$gsc     = $in['gsc_access'] ? ost_data( $id, 'gsc' ) : array();
-	$raw     = array();
-	foreach ( $in['keywords'] as $s ) {
-		if ( isset( $kw[ $s ] ) ) {
-			$raw[ $s ] = $kw[ $s ];
-		}
-	}
+	$raw      = ost_market_raw( $p ); // Seed research + the manager's list + market depth.
 	$review   = ost_data( $id, 'aikw' );
 	$market   = ost_build_market( $raw, $review, ost_kw_rules( $p ) );
 	$market['ai_note'] = (string) ( $review['note'] ?? '' );
@@ -399,6 +398,9 @@ function ost_compute( $id ) {
 	$a['roadmap'] = ost_roadmap( $a, $sel, $a['forecast'], $months, $in );
 	$rev          = ost_revenue_range( $a['forecast']['buyer_mid'], $in );
 	$a['forecast']['revenue'] = $rev;
+	$a['demand_share']        = ost_demand_share( $a );
+	$a['estimate']['target']  = ost_target( $a, $in, $est );
+	$a['gaps']                = ost_gap_facts( $a, $in );
 	ost_set_data( $id, 'analysis', $a );
 	update_post_meta( $id, '_ost_value', array( 'total' => $sel['total'], 'monthly' => $sel['monthly'], 'fees' => $sel['fees'], 'package' => $sel['label'] ) );
 	return $a;

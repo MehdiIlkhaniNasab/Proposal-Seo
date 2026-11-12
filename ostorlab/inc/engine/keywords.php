@@ -29,6 +29,14 @@ function ost_intents() {
  */
 function ost_intent( $word ) {
 	$w     = ' ' . ost_norm( $word ) . ' ';
+	// Education: «آموزش / دوره / کلاس …» is someone looking for a course to enrol in, not information.
+	if ( 'education' === ( $GLOBALS['ost_biz_type'] ?? '' ) ) {
+		foreach ( array( 'آموزش', 'دوره', 'کلاس', 'ثبت نام', 'ثبتنام', 'آموزشگاه', 'آکادمی', 'مدرک', 'کارگاه', 'ورکشاپ', 'پکیج آموزش', 'خصوصی', 'مجازی', 'استاد', 'مدرس', 'شهریه', 'course' ) as $mod ) {
+			if ( false !== mb_strpos( $w, ' ' . ost_norm( $mod ) . ' ' ) || false !== mb_strpos( $w, ' ' . ost_norm( $mod ) ) ) {
+				return 'buy';
+			}
+		}
+	}
 	$order = array( 'buy', 'local', 'compare', 'info' );
 	$all   = ost_intents();
 	foreach ( $order as $key ) {
@@ -63,6 +71,7 @@ function ost_build_market( $raw, $review = array(), $rules = array() ) {
 	$rescue  = array_flip( (array) ( $review['keep'] ?? array() ) );
 	$unsure  = array_flip( (array) ( $review['unsure'] ?? array() ) );
 	$ev      = $rules['evidence'] ?? null;
+	$reviewed = ! empty( $review['sig'] ); // The AI review ran on these keywords.
 	$stats   = array( 'zero' => 0, 'user' => 0, 'ai' => 0, 'irrelevant' => 0, 'evidence' => 0, 'kept' => 0 );
 	$dropped = array(); // norm => [w, v, seed, by, why].
 	$out     = function ( $k, $row, $seed, $by, $reason ) use ( &$dropped ) {
@@ -90,21 +99,28 @@ function ost_build_market( $raw, $review = array(), $rules = array() ) {
 			if ( isset( $dropped[ $k ] ) && 'rule' !== $dropped[ $k ]['by'] ) {
 				continue; // The topic rule is per seed; every other decision is final.
 			}
+			$trusted = ! empty( $r['manual'] );
 			if ( ! isset( $rules['restore'][ $k ] ) ) {
 				$ux = $rules ? ost_kw_user_excluded( $row['w'], $rules ) : '';
 				if ( '' !== $ux ) {
 					$out( $k, $row, $seed, 'user', $ux );
 					continue;
 				}
-				if ( isset( $drop[ $k ] ) ) {
+				if ( ! empty( $r['depth'] ) && ! isset( $rescue[ $k ] ) && ( $reviewed || ! ost_depth_related( $row['w'], $raw ) ) ) {
+					$out( $k, $row, $seed, 'rule', $reviewed ? 'کلمه رقبا که هوش مصنوعی آن را مربوط به کسب‌وکار شما ندانست' : 'کلمه رقبا که به موضوع کلمات شما ربطی ندارد' );
+					continue;
+				}
+				if ( $trusted ) {
+					// The manager's own list: only their exclusions apply.
+				} elseif ( isset( $drop[ $k ] ) ) {
 					$out( $k, $row, $seed, 'ai', $why[ $k ] ?? 'بی‌ربط با این کسب‌وکار' );
 					continue;
 				}
-				if ( ! isset( $rescue[ $k ] ) && ! ost_kw_relevant( $row['w'], $seed ) ) {
+				if ( ! $trusted && empty( $r['depth'] ) && ! isset( $rescue[ $k ] ) && ! ost_kw_relevant( $row['w'], $seed ) ) {
 					$out( $k, $row, $seed, 'rule', 'به موضوع «' . $seed . '» مربوط نیست' );
 					continue;
 				}
-				if ( null !== $ev && isset( $unsure[ $k ] ) && ! ost_kw_has_evidence( $row['w'], $ev ) ) {
+				if ( ! $trusted && null !== $ev && isset( $unsure[ $k ] ) && ! ost_kw_has_evidence( $row['w'], $ev ) ) {
 					$out( $k, $row, $seed, 'evidence', 'مرتبط بودنش قطعی نیست و هیچ رقیبی برایش رتبه ندارد' );
 					continue;
 				}
@@ -260,7 +276,9 @@ function ost_keyword_candidates( $raw, $max = 350 ) {
 		foreach ( $rows as $row ) {
 			$k = ost_norm( $row['w'] );
 			if ( (int) $row['v'] > 0 && ! isset( $out[ $k ] ) ) {
-				$out[ $k ] = array( 'w' => $row['w'], 'v' => (int) $row['v'], 'seed' => $seed, 'sure' => ost_kw_relevant( $row['w'], $seed ) );
+				// The manager's own words are trusted; market-depth words always need the AI's yes.
+				$sure      = ! empty( $r['manual'] ) || ( empty( $r['depth'] ) && ost_kw_relevant( $row['w'], $seed ) );
+				$out[ $k ] = array( 'w' => $row['w'], 'v' => (int) $row['v'], 'seed' => $seed, 'sure' => $sure );
 			}
 		}
 	}
@@ -297,12 +315,15 @@ function ost_key_keywords( $best, $review ) {
 			return $b['v'] <=> $a['v'];
 		} );
 	}
-	return array_slice( $out, 0, 20 );
+	return array_slice( $out, 0, 24 );
 }
 
 /**
  * Persian label of an intent key.
  */
 function ost_intent_label( $key ) {
+	if ( 'buy' === $key && 'education' === ( $GLOBALS['ost_biz_type'] ?? '' ) ) {
+		return 'ثبت‌نام و خرید دوره';
+	}
 	return 'general' === $key ? 'عمومی' : ( ost_intents()[ $key ]['label'] ?? $key );
 }

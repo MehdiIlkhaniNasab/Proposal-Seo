@@ -41,9 +41,11 @@ function ost_deck_slides( $p, $a ) {
 		'opps'        => 'پیشنهاد اصلی و فرصت‌های بازار',
 		'strategy'    => 'استراتژی شروع: نقشه فرصت‌ها',
 		'strategy_plan' => 'نقطه شروع و ۹۰ روز اول',
+		'path'        => 'مسیر رونق، قدم‌به‌قدم',
 		'astrolabe'   => 'اسطرلاب مسیر رشد',
 		'roadmap'     => 'نقشه راه',
 		'plan'        => 'برنامه ماه‌به‌ماه',
+		'method'      => 'مدل کاری رونق (سکان)',
 		'forecast'    => 'نتیجه قابل انتظار',
 		'estimate'    => 'تخمین ترافیک و فروش',
 		'packages'    => 'پکیج‌ها',
@@ -57,7 +59,10 @@ function ost_deck_slides( $p, $a ) {
 		unset( $all['profile'] );
 	}
 	if ( empty( $a['roadmap'] ) ) {
-		unset( $all['astrolabe'] );
+		unset( $all['astrolabe'], $all['path'] );
+	}
+	if ( '' === trim( (string) ost_setting( 'agency_method' ) ) ) {
+		unset( $all['method'] );
 	}
 	// Nothing without data: a slide whose numbers are all zero / missing is left out.
 	$m = (array) ( $a['market'] ?? array() );

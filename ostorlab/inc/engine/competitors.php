@@ -132,7 +132,7 @@ function ost_domain_profile( $site, $audit, $market, $in ) {
 function ost_revenue_range( $buyer_clicks, $in ) {
 	$cr  = max( 0.1, (float) ( $in['conversion_rate'] ?? 1.5 ) ) / 100;
 	$aov = (float) ( $in['aov'] ?? 0 );
-	if ( in_array( $in['business_type'] ?? 'shop', array( 'service', 'local', 'saas' ), true ) ) {
+	if ( 'leads' === ost_biz( $in['business_type'] ?? 'shop' )['basis'] ) {
 		$leads = $buyer_clicks * max( 0.5, (float) ( ! empty( $in['lead_rate'] ) ? $in['lead_rate'] : ost_setting( 'lead_rate', 3 ) ) ) / 100;
 		$close = ( ! empty( $in['close_rate'] ) ? (float) $in['close_rate'] : 30 ) / 100; // Leads that become customers.
 		return array(

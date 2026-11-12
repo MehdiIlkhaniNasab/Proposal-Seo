@@ -53,7 +53,19 @@ function ost_discovery_confirmed( $p ) {
 /**
  * The core questions, asked for every business.
  */
-function ost_discovery_core() {
+function ost_discovery_core( $type = 'shop' ) {
+	if ( 'education' === $type ) {
+		return array(
+			array( 'id' => 'sells', 'q' => 'چه دوره‌ها یا آموزش‌هایی ارائه می‌دهید؟ (هر خط یک مورد)', 'type' => 'text', 'why' => 'فقط کلمات همین دوره‌ها تحلیل می‌شوند.' ),
+			array( 'id' => 'not_sells', 'q' => 'چه حوزه‌هایی را آموزش نمی‌دهید یا کار نمی‌کنید؟ (هر خط یک مورد؛ مثلاً فروش ساز، دوره‌ای که ندارید)', 'type' => 'text', 'why' => 'کلمات مربوطشان کنار گذاشته می‌شود.' ),
+			array( 'id' => 'model', 'q' => 'دوره‌ها به چه شکل برگزار می‌شوند؟', 'type' => 'multi', 'options' => array( 'دوره ضبط‌شده آنلاین', 'کلاس آنلاین زنده', 'کلاس حضوری', 'خصوصی / یک‌به‌یک', 'کارگاه و بوت‌کمپ' ) ),
+			array( 'id' => 'geo', 'q' => 'هنرجوها از کجا هستند؟', 'type' => 'choice', 'options' => array( 'سراسر ایران (آنلاین)', 'یک شهر (حضوری)', 'ایران و فارسی‌زبانان خارج از کشور' ) ),
+			array( 'id' => 'price', 'q' => 'شهریه دوره‌ها در چه رده‌ای است؟', 'type' => 'choice', 'options' => array( 'اقتصادی', 'متوسط', 'بالا / تخصصی', 'رایگان + دوره پولی' ) ),
+			array( 'id' => 'audience', 'q' => 'هنرجوی اصلی شما کیست و هدفش چیست؟', 'type' => 'multi', 'options' => array( 'نوجوان و کودک', 'بزرگسال علاقه‌مند (سرگرمی)', 'شغل و درآمد', 'دانشجو و کنکور / مدرک', 'حرفه‌ای‌ها (ارتقای مهارت)' ) ),
+			array( 'id' => 'focus', 'q' => 'پرفروش‌ترین یا مهم‌ترین دوره‌ها برای رشد کدام‌اند؟', 'type' => 'text', 'why' => 'فرصت‌های «سودآور» و نقطه شروع روی همین‌ها متمرکز می‌شود.' ),
+			array( 'id' => 'channels', 'q' => 'هنرجوها الان بیشتر از کجا می‌آیند؟', 'type' => 'multi', 'options' => array( 'اینستاگرام', 'گوگل', 'یوتیوب و آپارات', 'معرفی هنرجوهای قبلی', 'تبلیغات', 'پیام‌رسان‌ها (تلگرام، واتس‌اپ)' ) ),
+		);
+	}
 	return array(
 		array( 'id' => 'sells', 'q' => 'محصولات یا خدماتی که واقعاً می‌فروشید چیست؟ (هر خط یک مورد)', 'type' => 'text', 'why' => 'فقط کلمات همین محصولات تحلیل می‌شوند.' ),
 		array( 'id' => 'not_sells', 'q' => 'چه محصولات یا حوزه‌هایی را کار نمی‌کنید؟ (هر خط یک مورد؛ کلمات مربوطشان کنار گذاشته می‌شود)', 'type' => 'text', 'why' => 'مثلاً برای فروشگاه بدلیجات: «طلا»، «دستبند پلیسی».' ),
@@ -63,6 +75,25 @@ function ost_discovery_core() {
 		array( 'id' => 'focus', 'q' => 'پرسودترین یا مهم‌ترین محصولات برای رشد کدام‌اند؟', 'type' => 'text', 'why' => 'فرصت‌های «سودآور» و نقطه شروع روی همین‌ها متمرکز می‌شود.' ),
 		array( 'id' => 'channels', 'q' => 'مشتری‌ها الان بیشتر از کجا می‌آیند؟', 'type' => 'multi', 'options' => array( 'اینستاگرام', 'گوگل', 'حضوری و معرفی', 'مارکت‌پلیس‌ها (دیجی‌کالا، باسلام…)', 'تبلیغات', 'پیام‌رسان‌ها' ) ),
 	);
+}
+
+/**
+ * Main text of a page (paragraphs), for the "about us" page.
+ */
+function ost_discovery_text( $html, $max = 1500 ) {
+	$html = preg_replace( '#<(script|style|noscript|svg|nav|header|footer)\b.*?</\1>#is', ' ', (string) $html );
+	preg_match_all( '#<(p|li|h[1-4])[^>]*>(.*?)</\1>#is', $html, $m );
+	$out = '';
+	foreach ( $m[2] as $t ) {
+		$t = trim( preg_replace( '/\s+/u', ' ', html_entity_decode( wp_strip_all_tags( $t ), ENT_QUOTES, 'UTF-8' ) ) );
+		if ( mb_strlen( $t ) >= 25 ) {
+			$out .= $t . "\n";
+		}
+		if ( mb_strlen( $out ) > $max ) {
+			break;
+		}
+	}
+	return mb_substr( $out, 0, $max );
 }
 
 /**
@@ -119,6 +150,16 @@ function ost_discovery_read( $p ) {
 		$r = $got[ $u ] ?? null;
 		if ( $r && empty( $r['error'] ) && (int) ( $r['code'] ?? 0 ) < 400 && ! empty( $r['body'] ) ) {
 			$out[ $d ] = array_merge( array( 'role' => $doms[ $d ] ), ost_discovery_page( $r['body'] ) );
+			// The client's own words about itself: its "about us" page.
+			if ( 'client' === $doms[ $d ] && preg_match( '#<a\b[^>]*href=["\']([^"\'\#]*(?:about|%d8%af%d8%b1%d8%a8%d8%a7%d8%b1%d9%87|درباره)[^"\'\#]*)["\']#iu', $r['body'], $am ) ) {
+				$au = preg_match( '#^https?://#i', $am[1] ) ? $am[1] : trailingslashit( $u ) . ltrim( $am[1], '/' );
+				if ( ost_domain( $au ) === $d ) {
+					$ar = ost_site_get( $au, 10 );
+					if ( ! is_wp_error( $ar ) && $ar['code'] < 400 ) {
+						$out[ $d ]['about'] = ost_discovery_text( $ar['body'] );
+					}
+				}
+			}
 		}
 	}
 	return $out;
@@ -137,7 +178,7 @@ function ost_discovery_build( $p ) {
 	} catch ( Throwable $e ) {
 		$pages = array();
 	}
-	$core    = ost_discovery_core();
+	$core    = ost_discovery_core( $in['business_type'] );
 	$profile = array( 'summary' => '', 'sells' => array(), 'not_sells' => array(), 'audience' => '', 'price_tier' => '', 'geo' => '' );
 	$extra   = array();
 	$suggest = array();
@@ -145,6 +186,16 @@ function ost_discovery_build( $p ) {
 	if ( ost_ai_connected() ) {
 		$str    = array( 'type' => 'string' );
 		$list   = array( 'type' => 'array', 'items' => $str );
+		$sprops = array();
+		$sdesc  = array();
+		foreach ( $core as $q ) {
+			if ( in_array( $q['id'], array( 'sells', 'not_sells' ), true ) ) {
+				continue;
+			}
+			$sprops[ $q['id'] ] = 'multi' === $q['type'] ? $list : $str;
+			$sdesc[]            = $q['id'] . ' (' . ( 'text' === $q['type'] ? 'یک خط' : ( 'multi' === $q['type'] ? 'چند مورد از: ' : 'یکی از: ' ) . implode( '، ', (array) ( $q['options'] ?? array() ) ) ) . ')';
+		}
+		$sdesc = implode( '؛ ', $sdesc );
 		$schema = array(
 			'type'       => 'object',
 			'properties' => array(
@@ -154,7 +205,7 @@ function ost_discovery_build( $p ) {
 				'audience'   => $str,
 				'price_tier' => $str,
 				'geo'        => $str,
-				'suggested'  => array( 'type' => 'object', 'properties' => array( 'model' => $str, 'geo' => $str, 'price' => $str, 'focus' => $str, 'channels' => $list ), 'required' => array( 'model', 'geo', 'price', 'focus', 'channels' ) ),
+				'suggested'  => array( 'type' => 'object', 'properties' => $sprops, 'required' => array_keys( $sprops ) ),
 				'questions'  => array(
 					'type'  => 'array',
 					'items' => array(
@@ -172,8 +223,10 @@ function ost_discovery_build( $p ) {
 			'- summary: دو جمله ساده: این کسب‌وکار دقیقاً چه می‌فروشد و به چه کسی.',
 			'- sells: فهرست دسته‌های محصول/خدمت واقعی (۳ تا ۱۰ مورد کوتاه، از روی منو و تیترها).',
 			'- not_sells: حوزه‌هایی که با کلمات اصلی هم‌لفظ یا نزدیک‌اند ولی این کسب‌وکار کار نمی‌کند و ممکن است ابزار کلمات اشتباهی بیاورد (مثلاً برای «دستبند» بدلیجات: «دستبند پلیسی»، «دستبند طلا» اگر طلا نمی‌فروشد؛ برای «نیمست»: «vpn»). ۳ تا ۸ مورد کوتاه.',
-			'- suggested: جواب پیشنهادی تو برای سؤال‌های ثابت: model (یکی از: خرده‌فروشی آنلاین، عمده‌فروشی، خرده و عمده، فروشگاه حضوری و آنلاین، ارائه خدمات)، geo (یکی از: سراسر ایران (ارسال)، یک شهر یا استان، چند شهر مشخص، ایران و خارج از کشور)، price (یکی از: اقتصادی، متوسط، بالا / لوکس، متنوع (همه رده‌ها))، focus (محصولات احتمالاً پرسود، یک خط)، channels (از: اینستاگرام، گوگل، حضوری و معرفی، مارکت‌پلیس‌ها (دیجی‌کالا، باسلام…)، تبلیغات، پیام‌رسان‌ها).',
+			'- suggested: جواب پیشنهادی تو برای سؤال‌های ثابت (از گزینه‌ها؛ برای چندجوابی آرایه): ' . $sdesc . '.',
 			'- questions: ۳ تا ۵ سؤال مخصوص همین حوزه که جوابشان تحلیل کلمات و پیشنهاد را دقیق‌تر می‌کند و از روی سایت معلوم نیست (مثلاً جنس محصول، جنسیت مخاطب، تولیدکننده یا واردکننده، خدمات پس از فروش، شهرهای دارای شعبه). type یکی از choice (یک جواب)، multi (چند جواب)، text. برای choice و multi سه تا شش گزینه کوتاه. suggested: جواب محتمل تو (برای text یک مورد). why: یک جمله که چرا می‌پرسیم.',
+			'- کل حوزه سایت را در نظر بگیر (منو، تیترها و متن «درباره ما» با کلید about)، نه فقط کلمات اصلی ورودی.',
+			'- اگر کسب‌وکار آموزشی است (دوره، آموزشگاه، آکادمی؛ مثلاً موسیقی یا بازی‌سازی)، از دیدگاه آموزش تحلیل کن: چه دوره‌هایی، چه سطحی، هنرجو کیست و هدفش (سرگرمی، شغل، مدرک)، آنلاین یا حضوری. در not_sells چیزهایی بیاور که هم‌لفظ‌اند ولی دوره نیستند (مثلاً «خرید گیتار» اگر ساز نمی‌فروشد، «دانلود رایگان»). سؤال‌های اختصاصی هم آموزشی باشند (سطح، مدرک، پشتیبانی، پروژه‌محور بودن).',
 			'- اگر صفحه‌ای خوانده نشده، از روی ورودی‌ها حدس بزن و در summary بگو که حدسی است.',
 			'- فارسی ساده و کوتاه.',
 		) );
@@ -235,7 +288,8 @@ function ost_discovery_build( $p ) {
 				$q['suggested'] = array_values( array_intersect( $q['options'], array_map( 'strval', (array) ( $suggest['channels'] ?? array() ) ) ) );
 				break;
 			default:
-				$q['suggested'] = (string) ( $suggest[ $q['id'] ] ?? '' ); // A choice outside the options shows as «other».
+				$sv             = $suggest[ $q['id'] ] ?? ( 'multi' === $q['type'] ? array() : '' );
+				$q['suggested'] = 'multi' === $q['type'] ? array_values( array_map( 'strval', (array) $sv ) ) : ( is_array( $sv ) ? (string) reset( $sv ) : (string) $sv ); // A choice outside the options shows as «other».
 		}
 		$questions[] = $q;
 	}

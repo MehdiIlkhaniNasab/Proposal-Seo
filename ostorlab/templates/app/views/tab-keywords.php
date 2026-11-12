@@ -10,7 +10,38 @@
 
 defined( 'ABSPATH' ) || exit;
 
-$id = $p['id'];
+$id  = $p['id'];
+$man = ost_manual_kw( $id );
+?>
+<details class="ost-panel ost-import" <?php echo $man['rows'] ? '' : 'open'; ?>>
+	<summary><b><?php echo ost_icon( 'download', 16 ); // phpcs:ignore ?> ورود کلمات دستی (اکسل، CSV یا کپی)</b>
+		<small class="ost-muted"><?php echo $man['rows'] ? esc_html( sprintf( '%s کلمه ثبت شده · %s', ost_num( count( $man['rows'] ) ), 'only' === $man['mode'] ? 'تحلیل فقط با همین کلمات' : 'همراه کلمات سئو سیگنال' ) ) : 'اختیاری'; ?></small>
+	</summary>
+	<form method="post" enctype="multipart/form-data" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+		<?php ost_form_fields( 'ost_kw_import' ); ?><input type="hidden" name="id" value="<?php echo (int) $id; ?>">
+		<p class="ost-muted">ستون‌ها به ترتیب: <b>کلمه</b>، <b>جستجوی ماهانه</b> (اختیاری؛ خالی باشد از سئو سیگنال گرفته می‌شود)، <b>گروه</b> (اختیاری؛ هر گروه یک خوشه در پروپوزال می‌شود). سطر عنوان خودکار رد می‌شود. کلمات شما معتبر حساب می‌شوند و فقط حذف‌های خودتان رویشان اعمال می‌شود.</p>
+		<div class="ost-grid g2">
+			<label class="ost-field">ستون‌ها را از اکسل کپی کنید و اینجا بچسبانید
+				<textarea name="kw_text" rows="6" dir="auto" placeholder="خرید گیتار آکوستیک	2400	گیتار&#10;آموزش گیتار مقدماتی	1900	آموزش"></textarea>
+			</label>
+			<div>
+				<label class="ost-field">یا فایل (xlsx، csv، txt)
+					<input type="file" name="kw_file" accept=".xlsx,.csv,.txt">
+				</label>
+				<div class="ost-field">نقش این کلمات
+					<label class="ost-check"><input type="radio" name="mode" value="add" <?php checked( 'add', $man['mode'] ); ?>> همراه کلمات سئو سیگنال و عمق بازار</label>
+					<label class="ost-check"><input type="radio" name="mode" value="only" <?php checked( 'only', $man['mode'] ); ?>> تحلیل فقط با همین کلمات</label>
+				</div>
+				<label class="ost-check"><input type="checkbox" name="append" value="1"> به فهرست قبلی اضافه شود (وگرنه جایگزین می‌شود)</label>
+			</div>
+		</div>
+		<div class="ost-row">
+			<button class="ost-btn primary" data-busy="در حال ثبت و گرفتن حجم‌ها…">ثبت کلمات</button>
+			<?php if ( $man['rows'] ) : ?><button class="ost-btn ghost" name="clear" value="1" data-confirm="فهرست کلمات دستی حذف شود؟">حذف فهرست دستی</button><?php endif; ?>
+		</div>
+	</form>
+</details>
+<?php
 if ( ! $a || empty( $a['market'] ) ) {
 	echo '<div class="ost-empty sm"><p>بعد از جمع‌آوری کلمات (مرحله تحقیق کلمه در اجرای تحلیل) این صفحه پر می‌شود.</p><a class="ost-btn primary" href="' . esc_url( ost_proposal_url( $id ) ) . '">اجرای تحلیل</a></div>';
 	return;

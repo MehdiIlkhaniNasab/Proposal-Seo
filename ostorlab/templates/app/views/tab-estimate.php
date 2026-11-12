@@ -17,8 +17,9 @@ if ( ! $e ) {
 	echo '<div class="ost-empty sm"><p>برای دیدن تخمین‌ها یک بار «به‌روزرسانی تحلیل» را بزنید.</p></div>';
 	return;
 }
-$svc  = in_array( $in['business_type'], array( 'service', 'local', 'saas' ), true );
-$unit = 'leads' === $e['basis'] ? 'سرنخ (تماس / درخواست)' : 'سفارش';
+$biz  = ost_biz( $in['business_type'] );
+$svc  = 'leads' === $biz['basis'];
+$unit = $biz['unit'];
 $rng  = function ( $lo, $hi, $fmt = 'ost_num' ) {
 	return $fmt( $lo ) . ' تا ' . $fmt( $hi );
 };
@@ -38,6 +39,13 @@ if ( $e['has_money'] ) {
 }
 $head = 'all' === $e['headline'] ? 1 : 0;
 ?>
+<?php if ( ! empty( $e['target'] ) ) : $tg = $e['target']; ?>
+	<section class="ost-kpis">
+		<div class="hl"><b><?php echo esc_html( ost_num( $tg['visits'] ) ); ?></b><span>هدف رونق: بازدید ارگانیک ماهانه تا ماه <?php echo esc_html( ost_num( $tg['months'] ) ); ?></span></div>
+		<div><b><?php echo esc_html( ost_num( $tg['share'], 1 ) ); ?>٪</b><span>از کل تقاضای حوزه · <?php echo esc_html( $tg['basis'] ); ?></span></div>
+		<div><b><?php echo esc_html( ost_num( $tg['today'] ) ); ?></b><span>کلیک غیربرندی امروز (تخمین)</span></div>
+	</section>
+<?php endif; ?>
 <div class="ost-notice">
 	<b>این عددها از کجا آمده؟</b> همه تقاضا و پیش‌بینی‌ها از <b><?php echo esc_html( ost_num( $e['keywords'] ) ); ?> کلمه بررسی‌شده</b> در <?php echo esc_html( ost_num( $e['clusters'] ) ); ?> خوشه (تب بازبینی کلمات) ساخته شده است. بعد از شروع، کلمات کم‌حجم و جدید زیادی پیدا می‌شود که در این فهرست نیست؛ «ضریب کلمات کشف‌نشده» تقاضای واقعی را برآورد می‌کند. در پروپوزال هر دو عدد شفاف و جدا نمایش داده می‌شود.
 </div>
@@ -69,6 +77,10 @@ $head = 'all' === $e['headline'] ? 1 : 0;
 			<label class="ost-check"><input type="radio" name="headline" value="all" <?php checked( 'all', $est['headline'] ); ?>> با کلمات کشف‌نشده (تصویر واقعی‌تر بازار)</label>
 			<label class="ost-check"><input type="radio" name="headline" value="list" <?php checked( 'list', $est['headline'] ); ?>> فقط کلمات بررسی‌شده (محتاطانه)</label>
 		</div>
+		<div class="ost-field">هدف ترافیک رونق (بازدید ارگانیک ماهانه از گوگل، کل سایت)
+			<div class="ost-row"><input type="text" name="target_share" class="qty" placeholder="<?php echo esc_attr( ost_num( $e['target']['suggested'] ?? 3, 1 ) ); ?>" value="<?php echo esc_attr( $est['target_share'] > 0 ? ost_num( $est['target_share'], 1 ) : '' ); ?>"> ٪ از کل تقاضا · یا <input type="text" name="target" class="qty" placeholder="بازدید ماهانه" value="<?php echo esc_attr( $est['target'] > 0 ? ost_num( $est['target'] ) : '' ); ?>"></div>
+			<small class="ost-muted">پیشنهاد سیستم: <?php echo esc_html( ost_num( $e['target']['suggested'] ?? 3, 1 ) ); ?>٪ (سطح میانگین رقبا). خالی = پیشنهاد سیستم. هدف، میانگین ترافیک ماهانه کل سایت است، نه فقط کلمات پول‌ساز.</small>
+		</div>
 		<label class="ost-field">ضریب پیش‌بینی (٪)
 			<input type="text" name="adjust" class="qty" value="<?php echo esc_attr( ost_num( $est['adjust'] ) ); ?>">
 			<small class="ost-muted">۱۰۰ = پیش‌بینی خودکار. اگر شناخت شما از بازار یا برند کارفرما بیشتر است، کم یا زیادش کنید (۲۰ تا ۵۰۰).</small>
@@ -82,8 +94,8 @@ $head = 'all' === $e['headline'] ? 1 : 0;
 			<label class="ost-field">چند درصد سرنخ‌ها مشتری می‌شوند؟ (٪) <input type="text" name="close_rate" class="qty" value="<?php echo esc_attr( ost_num( $est['close_rate'] ) ); ?>"></label>
 			<label class="ost-field">ارزش هر مشتری / قرارداد (تومان) <input type="text" name="aov" class="ost-money" value="<?php echo esc_attr( $in['aov'] ? ost_num( $in['aov'] ) : '' ); ?>"></label>
 		<?php else : ?>
-			<label class="ost-field">نرخ تبدیل خرید (٪) <input type="text" name="conversion_rate" class="qty" value="<?php echo esc_attr( ost_num( $in['conversion_rate'], 1 ) ); ?>"><small class="ost-muted">معمول فروشگاه‌های ایرانی ۰٫۵ تا ۲٪ کلیک‌های خرید.</small></label>
-			<label class="ost-field">میانگین ارزش سفارش (تومان) <input type="text" name="aov" class="ost-money" value="<?php echo esc_attr( $in['aov'] ? ost_num( $in['aov'] ) : '' ); ?>"></label>
+			<label class="ost-field">نرخ تبدیل به <?php echo esc_html( $biz['unit'] ); ?> (٪) <input type="text" name="conversion_rate" class="qty" value="<?php echo esc_attr( ost_num( $in['conversion_rate'], 1 ) ); ?>"><small class="ost-muted">معمول سایت‌های ایرانی ۰٫۵ تا ۲٪ کلیک‌های <?php echo esc_html( $biz['buyer'] ); ?>.</small></label>
+			<label class="ost-field"><?php echo esc_html( $biz['value'] ); ?> (تومان) <input type="text" name="aov" class="ost-money" value="<?php echo esc_attr( $in['aov'] ? ost_num( $in['aov'] ) : '' ); ?>"></label>
 		<?php endif; ?>
 		<div class="ost-row">
 			<button class="ost-btn primary">محاسبه دوباره</button>

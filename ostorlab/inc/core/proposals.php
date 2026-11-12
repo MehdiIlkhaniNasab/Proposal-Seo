@@ -68,7 +68,25 @@ function ost_business_types() {
 		'local'   => 'کسب‌وکار محلی (کلینیک، شعبه، نمایندگی)',
 		'content' => 'رسانه / محتوایی',
 		'saas'    => 'نرم‌افزار و پلتفرم آنلاین',
+		'education' => 'آموزشی (دوره آنلاین، آموزشگاه، آکادمی)',
 	);
+}
+
+/**
+ * Words and measures of a business type: what a customer is, what one sale is called,
+ * and whether sales come as orders (shop, education) or leads (services).
+ */
+function ost_biz( $type = null ) {
+	$type = $type ?? ( $GLOBALS['ost_biz_type'] ?? 'shop' );
+	$all  = array(
+		'shop'      => array( 'basis' => 'orders', 'unit' => 'سفارش', 'buyer' => 'آماده خرید', 'value' => 'میانگین ارزش سفارش', 'customer' => 'مشتری', 'action' => 'خرید' ),
+		'service'   => array( 'basis' => 'leads', 'unit' => 'سرنخ', 'buyer' => 'آماده درخواست خدمت', 'value' => 'ارزش هر مشتری / قرارداد', 'customer' => 'مشتری', 'action' => 'درخواست خدمت' ),
+		'local'     => array( 'basis' => 'leads', 'unit' => 'تماس و مراجعه', 'buyer' => 'آماده مراجعه', 'value' => 'ارزش هر مشتری', 'customer' => 'مراجعه‌کننده', 'action' => 'مراجعه' ),
+		'content'   => array( 'basis' => 'orders', 'unit' => 'تبدیل', 'buyer' => 'باارزش', 'value' => 'ارزش هر تبدیل', 'customer' => 'مخاطب', 'action' => 'تبدیل' ),
+		'saas'      => array( 'basis' => 'leads', 'unit' => 'ثبت‌نام آزمایشی', 'buyer' => 'آماده ثبت‌نام', 'value' => 'ارزش هر مشتری', 'customer' => 'کاربر', 'action' => 'ثبت‌نام' ),
+		'education' => array( 'basis' => 'orders', 'unit' => 'ثبت‌نام', 'buyer' => 'آماده ثبت‌نام', 'value' => 'شهریه میانگین هر دوره', 'customer' => 'هنرجو / دانشجو', 'action' => 'ثبت‌نام در دوره' ),
+	);
+	return $all[ $type ] ?? $all['shop'];
 }
 
 /**

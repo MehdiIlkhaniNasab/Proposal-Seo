@@ -323,7 +323,7 @@ add_action( 'admin_post_ost_save_settings', function () {
 		}
 		if ( is_int( $defs[ $k ] ) || is_float( $defs[ $k ] ) ) {
 			$v = ost_to_number( $v );
-		} elseif ( in_array( $k, array( 'portfolio', 'agency_about', 'generic_anchors', 'spam_patterns', 'iran_tlds', 'google_service_account', 'agency_stats', 'team', 'consultant_bio' ), true ) ) {
+		} elseif ( in_array( $k, array( 'portfolio', 'agency_about', 'agency_method', 'generic_anchors', 'spam_patterns', 'iran_tlds', 'google_service_account', 'agency_stats', 'team', 'consultant_bio' ), true ) ) {
 			$v = 'google_service_account' === $k ? trim( (string) $v ) : sanitize_textarea_field( (string) $v );
 		} else {
 			$v = sanitize_text_field( (string) $v );
@@ -589,6 +589,8 @@ add_action( 'admin_post_ost_estimate', function () {
 			'lead_rate'  => $num( 'lead_rate', 0, 50, 0 ),
 			'low'        => $low && $high >= $low ? $low : 0,
 			'high'       => $low && $high >= $low ? $high : 0,
+			'target_share' => $num( 'target_share', 0, 100, 0 ),
+			'target'     => (int) $num( 'target', 0, 1e8, 0 ),
 		) );
 		$in = get_post_meta( $id, '_ost_inputs', true );
 		if ( is_array( $in ) ) {
@@ -600,4 +602,47 @@ add_action( 'admin_post_ost_estimate', function () {
 	ost_compute( $id );
 	ost_log( $id, 'تنظیمات تخمین ترافیک و فروش به‌روز شد' );
 	ost_back( ost_proposal_url( $id, 'estimate' ), 'تخمین‌ها دوباره محاسبه شد؛ همه اسلایدها از همین عددها استفاده می‌کنند.' );
+} );
+
+// Keywords tab: the manager's own keyword list (pasted, CSV or XLSX).
+add_action( 'admin_post_ost_kw_import', function () {
+	ost_guard( 'ost_kw_import' );
+	$id = (int) ost_post( 'id' );
+	$p  = ost_proposal( $id );
+	if ( ! $p ) {
+		ost_back( ost_url(), 'پروپوزال پیدا نشد.', false );
+	}
+	if ( ost_post( 'clear' ) ) {
+		delete_post_meta( $id, '_ost_manual_kw' );
+		$msg = 'فهرست کلمات دستی حذف شد.';
+	} else {
+		$rows = ost_parse_kw_table( (string) ost_post( 'kw_text' ) );
+		$f    = $_FILES['kw_file'] ?? null; // phpcs:ignore WordPress.Security.NonceVerification
+		if ( $f && ! empty( $f['tmp_name'] ) && is_uploaded_file( $f['tmp_name'] ) ) {
+			if ( preg_match( '/\.xlsx$/i', (string) $f['name'] ) ) {
+				$table = ost_read_xlsx( $f['tmp_name'] );
+				if ( is_wp_error( $table ) ) {
+					ost_back( ost_proposal_url( $id, 'keywords' ), $table->get_error_message(), false );
+				}
+				$rows = array_merge( $rows, ost_kw_rows( $table ) );
+			} else {
+				$rows = array_merge( $rows, ost_parse_kw_table( (string) file_get_contents( $f['tmp_name'] ) ) ); // phpcs:ignore
+			}
+		}
+		if ( ! $rows ) {
+			ost_back( ost_proposal_url( $id, 'keywords' ), 'کلمه‌ای پیدا نشد؛ ستون اول باید کلمه باشد.', false );
+		}
+		$r   = ost_manual_kw_import( $id, $rows, (string) ost_post( 'mode', 'add' ), (bool) ost_post( 'append' ) );
+		$msg = is_wp_error( $r ) ? $r->get_error_message() : $r;
+	}
+	ost_log( $id, 'فهرست کلمات دستی به‌روز شد' );
+	$kr              = ost_kw_review( $id );
+	$kr['confirmed'] = 0;
+	update_post_meta( $id, '_ost_kw_review', $kr );
+	if ( ! empty( $p['job']['steps'] ) ) {
+		// New keywords: review them with the AI again, recompute, wait for confirmation, rewrite.
+		ost_job_plan( ost_proposal( $id ) );
+		ost_back( ost_proposal_url( $id, 'summary', array( 'autorun' => 'resume' ) ), $msg . ' بازبینی کلمات دوباره اجرا می‌شود.' );
+	}
+	ost_back( ost_proposal_url( $id, 'keywords' ), $msg . ' حالا «شروع تحلیل» را بزنید.' );
 } );

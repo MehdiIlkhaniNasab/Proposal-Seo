@@ -77,6 +77,11 @@ function ost_writer_facts( $p, $a ) {
 		'has_site'     => (bool) $cd,
 		'search_console' => ! empty( $a['gsc']['totals'] ) ? array( 'clicks_3m' => $a['gsc']['totals']['clicks'], 'impressions_3m' => $a['gsc']['totals']['impressions'], 'brand_clicks' => $a['gsc']['brand']['brand'] ?? 0, 'nonbrand_clicks' => $a['gsc']['brand']['nonbrand'] ?? 0 ) : null,
 		'market'       => array( 'monthly_searches' => $a['market']['total'] ?? 0, 'buyer_searches' => $a['market']['buyer'] ?? 0, 'clusters' => $clusters ),
+		'demand_share_pct' => array_map( function ( $v ) {
+			return round( 100 * $v, 1 );
+		}, (array) ( $a['demand_share'] ?? array() ) ),
+		'gaps_found'   => array_column( (array) ( $a['gaps'] ?? array() ), 'text' ),
+		'traffic_target' => ! empty( $a['estimate']['target'] ) ? array( 'monthly_visits' => $a['estimate']['target']['visits'], 'share_of_field_pct' => $a['estimate']['target']['share'], 'basis' => $a['estimate']['target']['basis'], 'today_nonbrand_clicks' => $a['estimate']['target']['today'] ) : null,
 		'demand_scope' => array( 'reviewed_keywords' => $a['estimate']['keywords'] ?? 0, 'measured_monthly_searches' => $a['estimate']['measured'] ?? 0, 'estimated_total_with_undiscovered_keywords' => $a['estimate']['total'] ?? 0, 'longtail_factor' => $a['estimate']['longtail'] ?? 1, 'forecast_includes_undiscovered' => 'all' === ( $a['estimate']['headline'] ?? 'list' ) ),
 		'client_profile' => $cd ? $profile( $cd ) : null,
 		'competitors'  => array_map( $profile, array_keys( array_filter( (array) ( $a['profiles'] ?? array() ), function ( $x ) {
@@ -170,7 +175,7 @@ function ost_writer_ai( $p, $a, $part = 'all' ) {
 			'required'   => array( 'channels', 'channels_note', 'main_recommendation', 'market_opportunities' ),
 		);
 		$rules = array(
-			'- channels: سهم تقاضای همین کسب‌وکار (با همان محصولات، قیمت و منطقه) در ایران در هر کانال را واقع‌بینانه تخمین بزن (share به درصد، جمع ۱۰۰): google، instagram (اینستاگرام و شبکه‌های اجتماعی)، marketplaces (دیجی‌کالا، ترب، باسلام…)، offline (حضوری، معرفی، تماس)، other. اگر کارفرما گفته مشتری‌هایش الان از کجا می‌آیند، آن را هم در نظر بگیر. why یک جمله کوتاه. channels_note یک جمله: این‌ها تخمین‌اند و پایه‌شان جستجوی واقعی گوگل است.',
+			'- channels: سهم تقاضای همین کسب‌وکار (با همان محصولات، قیمت و منطقه) در ایران در هر کانال را واقع‌بینانه تخمین بزن (share به درصد، جمع ۱۰۰): google، instagram (اینستاگرام و شبکه‌های اجتماعی)، marketplaces (دیجی‌کالا، ترب، باسلام…)، offline (حضوری، معرفی، تماس)، other. اگر کارفرما گفته مشتری‌هایش الان از کجا می‌آیند، آن را هم در نظر بگیر. why یک جمله کوتاه و مشخص درباره همین کسب‌وکار: مشتری او در آن کانال دقیقاً چه می‌کند (مثلاً «پیج‌های فروش بدلیجات و خرید از دایرکت»، نه جمله کلی). channels_note یک جمله: این‌ها تخمین‌اند و پایه‌شان جستجوی واقعی گوگل است.',
 			'- market_opportunities: ۳ تا ۵ فرصت بازار از بین opportunities و key_keywords، حرفه‌ای و از زاویه‌های مختلف. هرکدام: title، keywords (۲ تا ۴ کلمه از همان داده)، angle یکی از «کم‌رقابت»، «زودبازده»، «سودآور»، «شکاف رقبا»، «جایگاه فعلی شما»؛ why دو جمله با عدد (تقاضا، وضعیت رقبا، جایگاه کارفرما)، potential نتیجه قابل انتظار با بازه و زمان. فرصت سودآور را با محصولات پرسود کارفرما هماهنگ کن.',
 			'- main_recommendation: پیشنهاد اصلی و هوشمندانه تو برای شروع؛ title کوتاه و جذاب، text سه تا چهار جمله با دلیل داده‌محور، طوری که کارفرما حس کند مخصوص کسب‌وکار خودش است.',
 		);
@@ -179,9 +184,10 @@ function ost_writer_ai( $p, $a, $part = 'all' ) {
 		$keys   = array( 'headline', 'executive_summary', 'strategy', 'market', 'current_state', 'competitors', 'offpage', 'technical', 'content' );
 		$schema = array( 'type' => 'object', 'properties' => array_fill_keys( $keys, $str ), 'required' => $keys );
 		$rules  = array(
-			'- هر متن بخش ۲ تا ۴ جمله؛ خلاصه اجرایی دو پاراگراف کوتاه: (۱) وضعیت فعلی و چالش اصلی، (۲) راهکار، زمان و نتیجه واقع‌بینانه؛ یک جمله هم به استراتژی شروع اشاره کند.',
+			'- هر متن بخش ۲ تا ۴ جمله. خلاصه اجرایی سه پاراگراف کوتاه: (۱) وضعیت امروز با عدد و مهم‌ترین شکاف‌ها از gaps_found، (۲) دیدگاه و مسیر رونق: از کجا شروع می‌کنیم (استراتژی شروع) و قدم‌های بعد، (۳) هدف ترافیکی (traffic_target) و زمان رسیدن به آن، بدون وعده قطعی.',
 			'- تیتر جلد یک جمله الهام‌بخش و دقیق درباره فرصت رشد همین کسب‌وکار (حداکثر ۱۲ کلمه).',
 			'- «strategy» قلب پروپوزال است: استراتژی شروع (entry_strategy) و پیشنهاد اصلی (main_recommendation) را طوری توضیح بده که کارفرما حس کند نقطه ورود هوشمندانه و مخصوص کسب‌وکار خودش پیدا شده؛ با نام ۲ تا ۳ فرصت اول، چرایی، زمان نتیجه و کلیک قابل انتظار ۹۰ روز اول.',
+			'- «current_state» جایگاه کارفرما را نسبت به کل تقاضای بازار با عدد بگوید (demand_share_pct) تا روشن شود چه سهم کوچکی دارد و این فاصله فرصت است، با لحن محترمانه.',
 			'- «market» از کانال‌های تقاضا (channels) هم یک جمله بگوید و شفاف بگوید عددها از reviewed_keywords کلمه بررسی‌شده آمده و با کلمات کشف‌نشده (demand_scope) تقاضای واقعی بیشتر است.',
 			'- اگر forecast_includes_undiscovered درست است، پیش‌بینی کلیک شامل برآورد کلمات کشف‌نشده است؛ این را یک بار ساده بگو.',
 			'- اگر سایت ندارد، از «شروع درست از صفر» بگو؛ برآوردهای رقبا تخمینی‌اند (یک بار و کوتاه).',
@@ -192,7 +198,7 @@ function ost_writer_ai( $p, $a, $part = 'all' ) {
 		$keys   = array( 'strengths', 'weaknesses', 'opportunities', 'threats', 'next_steps' );
 		$schema = array( 'type' => 'object', 'properties' => array_fill_keys( $keys, $list ), 'required' => $keys );
 		$rules  = array(
-			'- نقاط قوت/ضعف/فرصت/تهدید هر کدام ۳ تا ۴ مورد کوتاه (حداکثر ۱۲ کلمه)، مشخص، مبتنی بر داده و مخصوص همین کسب‌وکار.',
+			'- نقاط قوت/ضعف/فرصت/تهدید هر کدام ۳ تا ۴ مورد کوتاه (حداکثر ۱۴ کلمه)، مشخص و مخصوص همین کسب‌وکار. نقاط ضعف را از gaps_found و با عدد بنویس (توصیفی و کلی ننویس)، و هر مورد یک جهت استراتژیک داشته باشد (مثلاً «۴۲ کلمه در رتبه ۴ تا ۲۰؛ نزدیک‌ترین برد»).',
 			'- قدم‌های بعدی ۳ مورد عملی (جلسه مرور، دسترسی‌ها، شروع ماه اول).',
 		);
 		$max = 3000;
@@ -314,7 +320,8 @@ function ost_writer_fallback( $p, $a ) {
 		? trim( ( $nq ? sprintf( 'حدود %s سؤال پرجستجوی مشتریان پیدا شد. ', ost_num( $nq ) ) : '' ) . ( $ng ? sprintf( '%s کلمه را رقبا دارند و %s ندارد. ', ost_num( $ng ), $name ) : '' ) . 'برنامه محتوا از همین فاصله ساخته شده است.' )
 		: sprintf( 'برنامه محتوا روی %s خوشه اصلی بازار ساخته شده: برای هر خوشه یک صفحه فرود قوی و مقالات پشتیبان.', ost_num( count( (array) ( $m['clusters'] ?? array() ) ) ) );
 	$t['strengths']     = $cd ? implode( "\n", array_filter( array( ! empty( $a['gsc']['brand']['brand'] ) ? 'برند شناخته‌شده و جستجوی مستقیم نام شما' : '', ( $tech['score'] ?? 0 ) >= 70 ? 'پایه فنی قابل قبول' : '', ( $client['keywords'] ?? 0 ) > 100 ? 'حضور اولیه در گوگل برای ' . ost_num( $client['keywords'] ) . ' کلمه' : '', 'شناخت بازار و مشتری' ) ) ) : "شروع از صفر بدون بدهی فنی\nامکان معماری درست از روز اول";
-	$t['weaknesses']    = implode( "\n", array_filter( array( $cd && ( $client['money_pages'] ?? array() ) ? '' : 'صفحات اختصاصی برای کلمات خرید کم است', ost_deck_has_offpage( $a ) && ( $off_c['quality_reportages'] ?? 0 ) < $off_avg ? 'اعتبار و رپورتاژ کمتر از رقبا' : '', ( $tech['score'] ?? 100 ) < 70 ? 'مشکلات فنی مؤثر بر خزش و سرعت' : '' ) ) );
+	$gaps               = array_column( array_slice( (array) ( $a['gaps'] ?? array() ), 0, 4 ), 'text' );
+	$t['weaknesses']    = $gaps ? implode( "\n", $gaps ) : implode( "\n", array_filter( array( $cd && ( $client['money_pages'] ?? array() ) ? '' : 'صفحات اختصاصی برای کلمات خرید کم است', ost_deck_has_offpage( $a ) && ( $off_c['quality_reportages'] ?? 0 ) < $off_avg ? 'اعتبار و رپورتاژ کمتر از رقبا' : '', ( $tech['score'] ?? 100 ) < 70 ? 'مشکلات فنی مؤثر بر خزش و سرعت' : '' ) ) );
 	$t['opportunities'] = implode( "\n", array_filter( array( ! empty( $m['buyer'] ) ? sprintf( '%s جستجوی خرید ماهانه', ost_compact( $m['buyer'] ) ) : '', ( $a['gap']['count'] ?? 0 ) ? ost_num( $a['gap']['count'] ) . ' کلمه که رقبا دارند و شما ندارید' : '', ! empty( $sg['picks'] ) ? 'فرصت «' . $sg['picks'][0]['label'] . '» با رقابت کم و نتیجه سریع' : '', $nq ? 'سؤال‌های پرجستجوی مشتری که کسی کامل جواب نداده' : '' ) ) );
 	$t['threats']       = implode( "\n", array_filter( array( $leader ? 'سرمایه‌گذاری مداوم ' . $leader . ' روی سئو' : '', 'افزایش هزینه تبلیغات و وابستگی به آن', 'تغییرات الگوریتم گوگل' ) ) );
 	$t['next_steps']    = "جلسه مرور پروپوزال و پاسخ به سؤال‌ها\nدریافت دسترسی سایت، سرچ کنسول و آنالیتیکس\nشروع ماه اول: رفع موانع فنی و نقشه کلمات";

@@ -82,9 +82,9 @@ const OST_KW_CHUNK = 90;
  */
 function ost_kw_review_step( $p ) {
 	$id    = $p['id'];
-	$raw   = ost_data( $id, 'keywords' );
+	$raw   = ost_market_raw( $p );
 	$rules = ost_kw_rules( $p, false );
-	$cands = array_values( array_filter( ost_keyword_candidates( $raw, 450 ), function ( $c ) use ( $rules ) {
+	$cands = array_values( array_filter( ost_keyword_candidates( $raw, 600 ), function ( $c ) use ( $rules ) {
 		return ! ost_kw_user_excluded( $c['w'], $rules );
 	} ) );
 	$chunks = array_chunk( $cands, OST_KW_CHUNK );
@@ -132,7 +132,7 @@ function ost_kw_review_step( $p ) {
 			$seen[ $k ] = true;
 			return true;
 		} ) );
-		$state['important'] = array_slice( $state['important'], 0, 20 );
+		$state['important'] = array_slice( $state['important'], 0, 24 );
 	}
 	ost_set_data( $id, 'aikw', $state );
 	if ( $state['failed'] >= count( $chunks ) && $done ) {
@@ -346,6 +346,7 @@ function ost_channel_defaults( $type ) {
 		'local'   => array( 'google' => 40, 'instagram' => 22, 'marketplaces' => 0, 'offline' => 33, 'other' => 5 ),
 		'content' => array( 'google' => 60, 'instagram' => 25, 'marketplaces' => 0, 'offline' => 0, 'other' => 15 ),
 		'saas'    => array( 'google' => 45, 'instagram' => 15, 'marketplaces' => 0, 'offline' => 25, 'other' => 15 ),
+		'education' => array( 'google' => 42, 'instagram' => 30, 'marketplaces' => 6, 'offline' => 12, 'other' => 10 ),
 	);
 	return $d[ $type ] ?? $d['shop'];
 }

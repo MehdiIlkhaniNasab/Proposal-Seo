@@ -12,6 +12,7 @@ defined( 'ABSPATH' ) || exit;
 
 $id   = $p['id'];
 $in   = $p['inputs'];
+$GLOBALS['ost_biz_type'] = $in['business_type'];
 $a    = ost_data( $id, 'analysis' );
 $st   = ost_status_label( $p['status'] );
 $job  = (array) $p['job'];

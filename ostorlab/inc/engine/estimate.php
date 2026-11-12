@@ -43,6 +43,8 @@ function ost_estimate_settings( $id ) {
 		'lead_rate'  => 0,    // Visitors who become leads, percent (0 = default setting).
 		'low'        => 0,    // Manual end-of-period clicks (0 = automatic).
 		'high'       => 0,
+		'target_share' => 0,  // Ronagh's traffic target, % of the field's demand (0 = suggested).
+		'target'     => 0,    // Or the monthly visits directly.
 	), is_array( $e ) ? $e : array() );
 }
 
@@ -77,7 +79,7 @@ function ost_forecast_scale( $f, $factor, $low = 0, $high = 0 ) {
  */
 function ost_click_value( $in, $est ) {
 	$aov = (float) ( $in['aov'] ?? 0 );
-	if ( in_array( $in['business_type'] ?? 'shop', array( 'service', 'local', 'saas' ), true ) ) {
+	if ( 'leads' === ost_biz( $in['business_type'] ?? 'shop' )['basis'] ) {
 		$lr = ( (float) $est['lead_rate'] ?: (float) ost_setting( 'lead_rate', 3 ) ) / 100;
 		return array( 'per_click' => $lr * (float) $est['close_rate'] / 100 * $aov, 'rate' => $lr, 'basis' => 'leads' );
 	}
@@ -150,4 +152,142 @@ function ost_scope_note( $e ) {
 		$t .= sprintf( ' برای همین تقاضای واقعی حوزه را حدود %s برابر عدد اندازه‌گیری‌شده برآورد کرده‌ایم و هر دو عدد را جدا نشان می‌دهیم: عدد اندازه‌گیری‌شده قطعی‌تر است و عدد کل، تصویر واقعی‌تری از بازار می‌دهد.', ost_num( $e['longtail'], 1 ) );
 	}
 	return $t;
+}
+
+/**
+ * Share of the measured search demand each site captures today (its estimated clicks from
+ * the market's keywords ÷ the market's monthly searches).
+ *
+ * @return array domain => share (0..1)
+ */
+function ost_demand_share( $a ) {
+	$total = max( 1, (int) ( $a['market']['total'] ?? 0 ) );
+	$out   = array();
+	foreach ( (array) ( $a['profiles'] ?? array() ) as $d => $pr ) {
+		$out[ $d ] = min( 1, (int) ( $pr['market_clicks'] ?? 0 ) / $total );
+	}
+	arsort( $out );
+	return $out;
+}
+
+/**
+ * Ronagh's traffic target: monthly organic visits from Google for the whole site (not only
+ * money keywords), as a share of the total demand of the field. Suggested = the level of the
+ * average competitor today; the manager can set the share or the visits directly.
+ *
+ * @return array {share, visits, suggested, basis, months}
+ */
+function ost_target( $a, $in, $est ) {
+	$e     = (array) $a['estimate'];
+	$total = max( 1, (int) $e['total'] );
+	$comp  = array();
+	foreach ( (array) $a['profiles'] as $d => $pr ) {
+		if ( 'competitor' === $pr['role'] && ! empty( $pr['market_clicks'] ) ) {
+			$comp[] = (int) $pr['market_clicks'];
+		}
+	}
+	$lt        = max( 1, (float) $e['longtail'] );
+	$suggested = $comp ? 100 * ost_avg( $comp ) * $lt / $total : 3;
+	$suggested = max( 1, min( 25, round( $suggested * 2 ) / 2 ) );
+	$basis     = $comp ? 'رسیدن به سطح میانگین رقبای امروز' : 'سهم معمول یک سایت فعال در این بازار';
+	$share     = (float) $est['target_share'] > 0 ? (float) $est['target_share'] : $suggested;
+	$visits    = (int) $est['target'] > 0 ? (int) $est['target'] : (int) ( round( $total * $share / 100 / 10 ) * 10 );
+	if ( (int) $est['target'] > 0 ) {
+		$share = round( 100 * $visits / $total, 1 );
+		$basis = 'هدف تعیین‌شده توسط تیم رونق';
+	} elseif ( (float) $est['target_share'] > 0 ) {
+		$basis = 'سهم هدف تعیین‌شده توسط تیم رونق';
+	}
+	// Never below the forecast itself.
+	$floor = (int) ( $a['forecast']['scenarios']['high'] ?? 0 );
+	if ( $floor > $visits && ! (float) $est['target_share'] && ! (int) $est['target'] ) { // The manager's own target is kept as set.
+		$visits = (int) ( ceil( $floor / 10 ) * 10 );
+		$share  = round( 100 * $visits / $total, 1 );
+	}
+	return array(
+		'share'     => $share,
+		'visits'    => $visits,
+		'suggested' => $suggested,
+		'basis'     => $basis,
+		'months'    => (int) $in['months'],
+		'today'     => (int) ( $a['forecast']['baseline'] ?? 0 ),
+	);
+}
+
+/**
+ * Gaps found in the analysis, each with its number and source: the "why SEO, why now"
+ * facts used in the summary, the weaknesses and the AI texts.
+ *
+ * @return array [{k, text, n, src}]
+ */
+function ost_gap_facts( $a, $in ) {
+	$cd    = (string) ( $a['client_domain'] ?? '' );
+	$out   = array();
+	$share = (array) ( $a['demand_share'] ?? array() );
+	if ( $cd && isset( $share[ $cd ] ) && count( $share ) > 1 ) {
+		$lead = array_key_first( $share );
+		if ( $lead !== $cd && $share[ $lead ] > $share[ $cd ] ) {
+			$out[] = array( 'k' => 'share', 'n' => $share[ $cd ], 'src' => 'سئو سیگنال', 'text' => sprintf( 'سهم شما از تقاضای این بازار %s است؛ %s حدود %s را می‌گیرد.', ost_share_text( $share[ $cd ] ), $lead, ost_pct( $share[ $lead ] ) ) );
+		}
+	}
+	$noq = array_filter( (array) ( $a['strategy']['all'] ?? array() ), function ( $o ) {
+		return null === $o['client_pos'] && $o['buyer_share'] >= 0.5;
+	} );
+	if ( $noq ) {
+		$out[] = array( 'k' => 'money', 'n' => count( $noq ), 'src' => 'سئو سیگنال', 'text' => sprintf( '%s موضوع خرید با حدود %s جستجوی ماهانه که سایت شما در آن‌ها هیچ رتبه‌ای ندارد.', ost_num( count( $noq ) ), ost_compact( array_sum( array_column( $noq, 'volume' ) ) ) ) );
+	}
+	if ( ! empty( $a['gap']['count'] ) ) {
+		$out[] = array( 'k' => 'gap', 'n' => (int) $a['gap']['count'], 'src' => 'سئو سیگنال', 'text' => sprintf( '%s کلمه که رقبا در آن‌ها رتبه دارند و شما ندارید (حدود %s جستجوی ماهانه).', ost_num( $a['gap']['count'] ), ost_compact( $a['gap']['volume'] ?? 0 ) ) );
+	}
+	$gsc = (array) ( $a['gsc'] ?? array() );
+	if ( ! empty( $gsc['strike'] ) ) {
+		$out[] = array( 'k' => 'strike', 'n' => count( $gsc['strike'] ), 'src' => 'سرچ کنسول', 'text' => sprintf( '%s کلمه در رتبه ۴ تا ۲۰ با حدود %s نمایش در ۳ ماه؛ نزدیک‌ترین بردها.', ost_num( count( $gsc['strike'] ) ), ost_compact( array_sum( array_column( $gsc['strike'], 'impressions' ) ) ) ) );
+	}
+	if ( ! empty( $gsc['queries'] ) ) {
+		$low = array_filter( $gsc['queries'], function ( $q ) {
+			return $q['impressions'] >= 300 && $q['clicks'] / max( 1, $q['impressions'] ) < 0.01;
+		} );
+		if ( count( $low ) >= 3 ) {
+			$out[] = array( 'k' => 'ctr', 'n' => count( $low ), 'src' => 'سرچ کنسول', 'text' => sprintf( '%s جستجو با حدود %s نمایش ولی نرخ کلیک زیر ۱٪؛ دیده می‌شوید ولی انتخاب نمی‌شوید.', ost_num( count( $low ) ), ost_compact( array_sum( array_column( $low, 'impressions' ) ) ) ) );
+		}
+		if ( ! empty( $gsc['brand']['brand'] ) ) {
+			$all = max( 1, $gsc['brand']['brand'] + $gsc['brand']['nonbrand'] );
+			if ( $gsc['brand']['brand'] / $all > 0.5 ) {
+				$out[] = array( 'k' => 'brand', 'n' => $gsc['brand']['brand'] / $all, 'src' => 'سرچ کنسول', 'text' => sprintf( '%s از کلیک‌های گوگل برندی است؛ یعنی مشتری تازه‌ای که هنوز شما را نمی‌شناسد، کمتر به سایت می‌رسد.', ost_pct( $gsc['brand']['brand'] / $all ) ) );
+			}
+		}
+	}
+	$te = (array) ( $a['technical'][ $cd ] ?? array() );
+	if ( $cd && isset( $te['score'] ) && null !== $te['score'] ) {
+		$high = array_filter( (array) $te['issues'], function ( $i ) {
+			return 'high' === $i['sev'];
+		} );
+		if ( $high || $te['score'] < 70 ) {
+			$out[] = array( 'k' => 'tech', 'n' => count( $high ), 'src' => ! empty( $te['has_sf'] ) ? 'اسکریمینگ فراگ' : 'بررسی فنی', 'text' => sprintf( 'امتیاز فنی %s از ۱۰۰%s.', ost_num( $te['score'] ), $high ? '؛ ' . ost_num( count( $high ) ) . ' مشکل مهم: ' . implode( '، ', array_slice( array_column( $high, 'label' ), 0, 2 ) ) : '' ) );
+		}
+	}
+	if ( $cd && ost_deck_has_offpage( $a ) ) {
+		$mine = (int) ( $a['offpage'][ $cd ]['quality_reportages'] ?? 0 );
+		$cmp  = array();
+		foreach ( (array) $a['offpage'] as $d => $o ) {
+			if ( $d !== $cd ) {
+				$cmp[] = (int) $o['quality_reportages'];
+			}
+		}
+		$avg = $cmp ? (int) round( ost_avg( $cmp ) ) : 0;
+		if ( $avg > $mine ) {
+			$out[] = array( 'k' => 'offpage', 'n' => $avg - $mine, 'src' => 'سئو سیگنال', 'text' => sprintf( 'رقبا به‌طور میانگین %s رپورتاژ باکیفیت دارند و شما %s.', ost_num( $avg ), ost_num( $mine ) ) );
+		}
+	}
+	return $out;
+}
+
+/**
+ * A small share in words: "کمتر از ۰٫۱٪", "حدود ۰٫۴٪", "حدود ۸٪".
+ */
+function ost_share_text( $share ) {
+	if ( $share < 0.001 ) {
+		return 'کمتر از ۰٫۱٪';
+	}
+	return 'حدود ' . ost_pct( $share, $share < 0.01 ? 1 : 0 );
 }

@@ -402,3 +402,6 @@ body.ost-auth { min-height: 100vh; display: grid; place-items: center; backgroun
 .ost-est-form .ost-row { flex-wrap: nowrap; align-items: center; }
 .ost-est-form .ost-row input.qty { width: 140px; flex: none; }
 .ost-est-form .ost-money { max-width: 360px; }
+.ost-import summary { cursor: pointer; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.ost-import form { margin-top: 12px; }
+.ost-import textarea { width: 100%; font-family: inherit; }
